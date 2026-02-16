@@ -2,19 +2,28 @@ const express = require("express");
 const cors = require("cors");
 const morgan = require("morgan");
 const helmet = require("helmet");
+const compression = require("compression");
 const rateLimit = require("express-rate-limit");
+const cron = require("node-cron");
 
 const constants = require("./config/constants");
+const db = require("./config/db");
+const initDb = require("./utils/initDb");
+const syncService = require("./services/syncService");
 const paperRoutes = require("./routes/paperRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
+
 const { notFoundHandler, globalErrorHandler } = require("./middleware/errorHandler");
-const dataLoader = require("./utils/dataLoader");
 const scraper = require("./scrapers/notificationScraper");
 const notificationStore = require("./services/notificationStore");
 
 const app = express();
 
+// Trust Proxy for production (Vercel/Heroku/etc)
+app.set("trust proxy", 1);
+
 app.use(helmet());
+app.use(compression());
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -37,7 +46,7 @@ app.get("/", (_req, res) => {
   res.json({
     success: true,
     message: "NIT KKR PYQ API is running",
-    version: "1.1.0",
+    version: "1.2.0", // Bumped version for DB support
     environment: constants.NODE_ENV,
     endpoints: {
       papers: "/api/papers",
@@ -56,15 +65,22 @@ app.get("/", (_req, res) => {
   });
 });
 
-app.get("/api/health", (_req, res) => {
-  const meta = dataLoader.getMeta();
+app.get("/api/health", async (_req, res) => {
+  // Check DB health
+  let dbStatus = "unknown";
+  try {
+    const timeRes = await db.query("SELECT NOW()");
+    dbStatus = "connected";
+  } catch (err) {
+    dbStatus = `error: ${err.message}`;
+  }
+
   const storeMeta = notificationStore.getStoredMeta();
 
   res.json({
     success: true,
     status: "healthy",
-    totalRecords: dataLoader.getRecords().length,
-    extractedAt: meta.extractedAt || null,
+    db: dbStatus,
     uptime: process.uptime(),
     scraper: "active",
     notificationStore: {
@@ -139,10 +155,39 @@ app.use(globalErrorHandler);
 const PORT = constants.PORT;
 
 const server = app.listen(PORT, async () => {
-  dataLoader.loadData();
   console.log(`Server running on port ${PORT}`);
   console.log(`Environment: ${constants.NODE_ENV}`);
 
+  // 1. Initialize DB
+  try {
+    await initDb();
+  } catch (err) {
+    console.error("[Startup] Failed to initialize DB:", err);
+  }
+
+  // 2. Check and Sync Data
+  try {
+    const countRes = await db.query("SELECT COUNT(*) FROM papers");
+    const count = parseInt(countRes.rows[0].count, 10);
+    console.log(`[Startup] DB contains ${count} papers.`);
+
+    if (count === 0) {
+      console.log("[Startup] DB is empty. triggering initial sync...");
+      // Background sync, don't await blocking
+      syncService.syncPapers().catch(err => console.error("Initial sync failed:", err));
+    }
+  } catch (err) {
+    console.error("[Startup] Failed to check paper count:", err);
+  }
+
+  // 3. Schedule Weekly Sync (Every Sunday at midnight)
+  cron.schedule("0 0 * * 0", async () => {
+    console.log("[Scheduler] Starting weekly paper sync...");
+    await syncService.syncPapers();
+  });
+  console.log("[Startup] Scheduled weekly sync for 0 0 * * 0");
+
+  // 4. Initialize Notification Store
   try {
     await notificationStore.initializeStore(scraper);
     console.log(`[Startup] Notification store ready`);
@@ -150,6 +195,7 @@ const server = app.listen(PORT, async () => {
     console.warn("[Startup] Notification store init failed:", err.message);
   }
 
+  // 5. Start Notification Scheduler
   try {
     notificationStore.startScheduler(scraper, constants.SCRAPE_SCHEDULE);
   } catch (err) {

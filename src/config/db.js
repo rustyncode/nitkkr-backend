@@ -1,57 +1,36 @@
 const { Pool } = require("pg");
-const constants = require("../config/constants");
+const constants = require("./constants");
 
-// Create a new pool using the connection string from env
+// Create a new pool using the connection string from environment variables
 const pool = new Pool({
     connectionString: constants.DATABASE_URL,
-    ssl: {
-        rejectUnauthorized: false, // Required for Neon (and most serverless DBs) to avoid self-signed cert errors
-    },
+    ssl: constants.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+    max: 20, // Max number of clients in the pool
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000,
 });
 
-// Helper to run queries
-const query = (text, params) => pool.query(text, params);
-
-// Initialize DB schema
-const initDB = async () => {
-    const client = await pool.connect();
+// Helper for running queries
+const query = async (text, params) => {
+    const start = Date.now();
     try {
-        await client.query("BEGIN");
-
-        // Notifications Table
-        await client.query(`
-            CREATE TABLE IF NOT EXISTS notifications (
-                id SERIAL PRIMARY KEY,
-                title TEXT NOT NULL,
-                date TEXT,
-                link TEXT,
-                category TEXT,
-                created_at TIMESTAMP DEFAULT NOW(),
-                UNIQUE(title, date)
-            );
-        `);
-
-        // Meta Table (store hash, last scrape time)
-        await client.query(`
-            CREATE TABLE IF NOT EXISTS meta (
-                key TEXT PRIMARY KEY,
-                value JSONB
-            );
-        `);
-
-        await client.query("COMMIT");
-        console.log("[DB] Schema initialized");
-    } catch (e) {
-        await client.query("ROLLBACK");
-        console.error("[DB] Init failed", e);
-        throw e;
-    } finally {
-        client.release();
+        const res = await pool.query(text, params);
+        const duration = Date.now() - start;
+        // console.log("executed query", { text, duration, rows: res.rowCount });
+        return res;
+    } catch (err) {
+        console.error("Error executing query", { text, err });
+        throw err;
     }
 };
 
+// Check connection
+pool.on("error", (err, client) => {
+    console.error("Unexpected error on idle client", err);
+    process.exit(-1);
+});
+
 module.exports = {
     query,
-    initDB,
     pool,
 };
