@@ -22,11 +22,11 @@ const constants = {
 
   CORS_ORIGINS: process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(",") : ["*"],
 
-  FIREBASE_BUCKET: getEnv("FIREBASE_BUCKET", "kkr-repo-60a6a.appspot.com"),
-  FIREBASE_STORAGE_API: getEnv(
-    "FIREBASE_STORAGE_API",
-    "https://firebasestorage.googleapis.com/v0/b/kkr-repo-60a6a.appspot.com/o"
-  ),
+  FIREBASE_PROJECT_ID: getEnv("FIREBASE_PROJECT_ID"),
+  FIREBASE_APP_ID: getEnv("FIREBASE_APP_ID"),
+  FIREBASE_STORAGE_BUCKET: getEnv("FIREBASE_STORAGE_BUCKET"),
+
+  STORAGE_API_URL: getEnv("STORAGE_API_URL"),
 
   SCRAPE_SCHEDULE: process.env.SCRAPE_SCHEDULE || "0 */6 * * *",
 

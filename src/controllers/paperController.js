@@ -1,8 +1,8 @@
 const paperService = require("../services/paperService");
-const dataLoader = require("../utils/dataLoader");
+// dataLoader is removed
 
 // GET /api/papers
-function getPapers(req, res) {
+async function getPapers(req, res) {
   try {
     const {
       q,
@@ -37,7 +37,7 @@ function getPapers(req, res) {
       fileExtension,
     };
 
-    const result = paperService.getPapers({
+    const result = await paperService.getPapers({
       query: q,
       filters,
       page,
@@ -62,10 +62,10 @@ function getPapers(req, res) {
 }
 
 // GET /api/papers/:id
-function getPaperById(req, res) {
+async function getPaperById(req, res) {
   try {
     const { id } = req.params;
-    const paper = paperService.getPaperById(id);
+    const paper = await paperService.getPaperById(id);
 
     if (!paper) {
       return res.status(404).json({
@@ -89,9 +89,9 @@ function getPaperById(req, res) {
 }
 
 // GET /api/filters
-function getFilterOptions(req, res) {
+async function getFilterOptions(req, res) {
   try {
-    const options = paperService.getFilterOptions();
+    const options = await paperService.getFilterOptions();
 
     return res.json({
       success: true,
@@ -108,9 +108,9 @@ function getFilterOptions(req, res) {
 }
 
 // GET /api/stats
-function getStats(req, res) {
+async function getStats(req, res) {
   try {
-    const stats = paperService.getStats();
+    const stats = await paperService.getStats();
 
     return res.json({
       success: true,
@@ -127,10 +127,10 @@ function getStats(req, res) {
 }
 
 // GET /api/subjects
-function getSubjectCodes(req, res) {
+async function getSubjectCodes(req, res) {
   try {
     const { deptCode, category } = req.query;
-    const subjects = paperService.getSubjectCodes({ deptCode, category });
+    const subjects = await paperService.getSubjectCodes({ deptCode, category });
 
     return res.json({
       success: true,
@@ -148,18 +148,23 @@ function getSubjectCodes(req, res) {
 }
 
 // GET /api/papers/all — return every paper in one shot (for client-side caching)
-function getAllPapers(req, res) {
+async function getAllPapers(req, res) {
   try {
-    const records = dataLoader.getRecords();
-    const meta = dataLoader.getMeta();
-    const filterOptions = dataLoader.getFilterOptions();
+    // Fetch all papers without pagination (high limit)
+    // NOTE: This might be heavy for DB if thousands of records.
+    // For now, mirroring previous behavior.
+    const result = await paperService.getPapers({
+      limit: 10000,
+      page: 1
+    });
+    const filterOptions = await paperService.getFilterOptions();
 
     return res.json({
       success: true,
-      data: records,
-      total: records.length,
+      data: result.records,
+      total: result.pagination.totalRecords,
       filterOptions: filterOptions,
-      extractedAt: meta.extractedAt || null,
+      extractedAt: new Date(), // DB doesn't have a single extraction time, returning now()
     });
   } catch (err) {
     console.error("[PaperController] getAllPapers error:", err.message);

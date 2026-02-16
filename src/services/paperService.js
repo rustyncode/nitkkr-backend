@@ -1,4 +1,4 @@
-const dataLoader = require("../utils/dataLoader");
+const db = require("../config/db");
 const constants = require("../config/constants");
 
 // ─── Search helpers ─────────────────────────────────────────
@@ -7,175 +7,242 @@ function normalizeQuery(str) {
   return str.toLowerCase().trim().replace(/\s+/g, " ");
 }
 
-function matchesSearch(record, query) {
-  if (!query) return true;
-  const normalized = normalizeQuery(query);
-  const terms = normalized.split(" ");
-  return terms.every((term) => record.searchText.includes(term));
-}
-
 // ─── Filter helpers ─────────────────────────────────────────
 
-function matchesFilter(record, filters) {
-  const {
-    department,
-    deptCode,
-    subjectCode,
-    examType,
-    midsemNumber,
-    year,
-    category,
-    catCode,
-    session,
-    variant,
-    fileExtension,
-  } = filters;
+function buildWhereClause(filters, query) {
+  const conditions = [];
+  const values = [];
+  let paramIdx = 1;
 
-  if (department && record.department !== department) return false;
-  if (deptCode && record.deptCode !== deptCode) return false;
-  if (subjectCode && record.subjectCode !== subjectCode) return false;
-  if (examType && record.examType !== examType) return false;
-  if (category && record.category !== category) return false;
-  if (catCode && record.catCode !== catCode) return false;
-  if (session && record.session !== session) return false;
-  if (variant && record.variant !== variant) return false;
-  if (fileExtension && record.fileExtension !== fileExtension) return false;
-
-  if (midsemNumber !== undefined && midsemNumber !== null) {
-    const msNum = parseInt(midsemNumber, 10);
-    if (!isNaN(msNum) && record.midsemNumber !== msNum) return false;
+  // Search Query (Full Text Search + manual fallback)
+  if (query) {
+    const normalized = normalizeQuery(query);
+    // Simple ILIKE for broad matching on generated search_text column
+    conditions.push(`search_text ILIKE $${paramIdx++}`);
+    values.push(`%${normalized}%`);
   }
 
-  if (year) {
-    const yearList = Array.isArray(year) ? year : year.split(",");
-    if (!yearList.includes(record.year)) return false;
+  // Exact filters
+  if (filters.department) {
+    conditions.push(`department = $${paramIdx++}`);
+    values.push(filters.department);
+  }
+  if (filters.deptCode) {
+    conditions.push(`dept_code = $${paramIdx++}`);
+    values.push(filters.deptCode);
+  }
+  if (filters.subjectCode) {
+    conditions.push(`subject_code = $${paramIdx++}`);
+    values.push(filters.subjectCode);
+  }
+  if (filters.examType) {
+    conditions.push(`exam_type = $${paramIdx++}`);
+    values.push(filters.examType);
+  }
+  if (filters.category) {
+    conditions.push(`category = $${paramIdx++}`);
+    values.push(filters.category);
+  }
+  if (filters.catCode) {
+    conditions.push(`cat_code = $${paramIdx++}`);
+    values.push(filters.catCode);
+  }
+  if (filters.session) {
+    conditions.push(`session = $${paramIdx++}`);
+    values.push(filters.session);
+  }
+  if (filters.variant) {
+    conditions.push(`variant = $${paramIdx++}`);
+    values.push(filters.variant);
+  }
+  if (filters.fileExtension) {
+    conditions.push(`file_extension = $${paramIdx++}`);
+    values.push(filters.fileExtension);
   }
 
-  return true;
-}
-
-// ─── Sort helpers ───────────────────────────────────────────
-
-const SORT_FIELDS = [
-  "year",
-  "subjectCode",
-  "department",
-  "examType",
-  "uploadedAt",
-  "fileSizeKB",
-];
-
-function sortRecords(records, sortBy, sortOrder) {
-  const field = SORT_FIELDS.includes(sortBy) ? sortBy : "year";
-  const order = sortOrder === "asc" ? 1 : -1;
-
-  return [...records].sort((a, b) => {
-    const valA = a[field] ?? "";
-    const valB = b[field] ?? "";
-
-    if (typeof valA === "number" && typeof valB === "number") {
-      return (valA - valB) * order;
+  if (filters.midsemNumber !== undefined && filters.midsemNumber !== null) {
+    const msNum = parseInt(filters.midsemNumber, 10);
+    if (!isNaN(msNum)) {
+      conditions.push(`midsem_number = $${paramIdx++}`);
+      values.push(msNum);
     }
+  }
 
-    return String(valA).localeCompare(String(valB)) * order;
-  });
+  if (filters.year) {
+    const yearList = Array.isArray(filters.year) ? filters.year : filters.year.split(",");
+    if (yearList.length > 0) {
+      conditions.push(`year = ANY($${paramIdx++}::text[])`);
+      values.push(yearList);
+    }
+  }
+
+  return {
+    where: conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "",
+    values,
+    nextParamIdx: paramIdx,
+  };
 }
 
 // ─── Public API ─────────────────────────────────────────────
 
-function getPapers({ query, filters, page, limit, sortBy, sortOrder }) {
-  const allRecords = dataLoader.getRecords();
+async function getPapers({ query, filters, page, limit, sortBy, sortOrder }) {
+  const { where, values } = buildWhereClause(filters, query);
 
-  // Step 1: Apply search
-  let results = allRecords.filter((r) => matchesSearch(r, query));
+  // Sorting
+  const validSortFields = {
+    year: "year",
+    subjectCode: "subject_code",
+    department: "department",
+    examType: "exam_type",
+    uploadedAt: "uploaded_at",
+    fileSizeKB: "file_size",
+  };
+  const sortField = validSortFields[sortBy] || "year"; // Default sort
+  const direction = sortOrder === "asc" ? "ASC" : "DESC";
 
-  // Step 2: Apply filters
-  results = results.filter((r) => matchesFilter(r, filters));
-
-  // Step 3: Sort
-  results = sortRecords(results, sortBy, sortOrder);
-
-  // Step 4: Paginate
-  const totalRecords = results.length;
+  // Pagination
+  const pageNum = Math.max(parseInt(page, 10) || 1, 1);
   const pageSize = Math.min(
     Math.max(parseInt(limit, 10) || constants.DEFAULT_PAGE_SIZE, 1),
     constants.MAX_PAGE_SIZE
   );
-  const currentPage = Math.max(parseInt(page, 10) || 1, 1);
+  const offset = (pageNum - 1) * pageSize;
+
+  // Count Query
+  const countQuery = `SELECT COUNT(*) FROM papers ${where}`;
+  const countRes = await db.query(countQuery, values);
+  const totalRecords = parseInt(countRes.rows[0].count, 10);
+
+  // Data Query
+  const dataQuery = `
+    SELECT 
+      id, subject_code as "subjectCode", dept_code as "deptCode", department, 
+      cat_code as "catCode", category, subject_number as "subjectNumber",
+      exam_type_raw as "examTypeRaw", exam_type as "examType", 
+      midsem_number as "midsemNumber", year, session, variant, detail,
+      file_extension as "fileExtension", original_file_name as "originalFileName",
+      file_size as "fileSize", content_type as "contentType", 
+      uploaded_at as "uploadedAt", download_url as "downloadUrl", 
+      metadata_url as "metadataUrl", search_text as "searchText"
+    FROM papers
+    ${where}
+    ORDER BY ${sortField} ${direction}
+    LIMIT $${values.length + 1} OFFSET $${values.length + 2}
+  `;
+
+  const dataRes = await db.query(dataQuery, [...values, pageSize, offset]);
+
   const totalPages = Math.ceil(totalRecords / pageSize);
-  const startIdx = (currentPage - 1) * pageSize;
-  const endIdx = startIdx + pageSize;
-  const paginatedRecords = results.slice(startIdx, endIdx);
 
   return {
-    records: paginatedRecords,
+    records: dataRes.rows,
     pagination: {
-      currentPage,
+      currentPage: pageNum,
       pageSize,
       totalRecords,
       totalPages,
-      hasMore: currentPage < totalPages,
-      nextPage: currentPage < totalPages ? currentPage + 1 : null,
+      hasMore: pageNum < totalPages,
+      nextPage: pageNum < totalPages ? pageNum + 1 : null,
     },
   };
 }
 
-function getPaperById(id) {
-  const allRecords = dataLoader.getRecords();
-  return allRecords.find((r) => r.id === id) || null;
+async function getPaperById(id) {
+  const query = `
+    SELECT 
+      id, subject_code as "subjectCode", dept_code as "deptCode", department, 
+      cat_code as "catCode", category, subject_number as "subjectNumber",
+      exam_type_raw as "examTypeRaw", exam_type as "examType", 
+      midsem_number as "midsemNumber", year, session, variant, detail,
+      file_extension as "fileExtension", original_file_name as "originalFileName",
+      file_size as "fileSize", content_type as "contentType", 
+      uploaded_at as "uploadedAt", download_url as "downloadUrl", 
+      metadata_url as "metadataUrl", search_text as "searchText"
+    FROM papers
+    WHERE id = $1
+  `;
+  const res = await db.query(query, [id]);
+  return res.rows[0] || null;
 }
 
-function getFilterOptions() {
-  return dataLoader.getFilterOptions();
-}
-
-function getStats() {
-  const allRecords = dataLoader.getRecords();
-
-  const countBy = (field) => {
-    const counts = {};
-    for (const r of allRecords) {
-      const key = r[field];
-      if (key) counts[key] = (counts[key] || 0) + 1;
-    }
-    return counts;
+async function getFilterOptions() {
+  // We can cache this or query distinct values
+  // For now, executing distinct queries in parallel for performance
+  const queries = {
+    departments: 'SELECT DISTINCT department FROM papers WHERE department IS NOT NULL ORDER BY department',
+    years: 'SELECT DISTINCT year FROM papers WHERE year IS NOT NULL ORDER BY year DESC',
+    examTypes: 'SELECT DISTINCT exam_type as "examType" FROM papers WHERE exam_type IS NOT NULL ORDER BY exam_type',
+    categories: 'SELECT DISTINCT category FROM papers WHERE category IS NOT NULL ORDER BY category',
+    subjects: 'SELECT DISTINCT subject_code as "subjectCode" FROM papers WHERE subject_code IS NOT NULL ORDER BY subject_code'
   };
+
+  const results = {};
+  await Promise.all(
+    Object.entries(queries).map(async ([key, sql]) => {
+      const res = await db.query(sql);
+      results[key] = res.rows.map(row => row[Object.keys(row)[0]]);
+    })
+  );
+
+  return results;
+}
+
+async function getStats() {
+  const countBy = async (field, alias) => {
+    const sql = `SELECT ${field} as key, COUNT(*) as count FROM papers WHERE ${field} IS NOT NULL GROUP BY ${field}`;
+    const res = await db.query(sql);
+    return res.rows.reduce((acc, row) => ({ ...acc, [row.key]: parseInt(row.count, 10) }), {});
+  };
+
+  const totalRes = await db.query('SELECT COUNT(*) FROM papers');
+
+  const [byDept, byYear, byExam, byCat, bySub, byExt] = await Promise.all([
+    countBy('department'),
+    countBy('year'),
+    countBy('exam_type'),
+    countBy('category'),
+    countBy('subject_code'),
+    countBy('file_extension')
+  ]);
 
   return {
-    totalPapers: allRecords.length,
-    byDepartment: countBy("department"),
-    byYear: countBy("year"),
-    byExamType: countBy("examType"),
-    byCategory: countBy("category"),
-    bySubjectCode: countBy("subjectCode"),
-    byFileExtension: countBy("fileExtension"),
+    totalPapers: parseInt(totalRes.rows[0].count, 10),
+    byDepartment: byDept,
+    byYear: byYear,
+    byExamType: byExam,
+    byCategory: byCat,
+    bySubjectCode: bySub,
+    byFileExtension: byExt,
   };
 }
 
-function getSubjectCodes({ deptCode, category }) {
-  const allRecords = dataLoader.getRecords();
-  const seen = new Set();
-  const subjects = [];
-
-  for (const r of allRecords) {
-    if (deptCode && r.deptCode !== deptCode) continue;
-    if (category && r.category !== category) continue;
-    if (seen.has(r.subjectCode)) continue;
-
-    seen.add(r.subjectCode);
-    subjects.push({
-      subjectCode: r.subjectCode,
-      subjectNumber: r.subjectNumber,
-      deptCode: r.deptCode,
-      department: r.department,
-      catCode: r.catCode,
-      category: r.category,
-    });
+async function getSubjectCodes({ deptCode, category }) {
+  let where = "";
+  const params = [];
+  if (deptCode) {
+    where = "WHERE dept_code = $1";
+    params.push(deptCode);
+  }
+  if (category) {
+    where = where ? `${where} AND category = $${params.length + 1}` : `WHERE category = $${params.length + 1}`;
+    params.push(category);
   }
 
-  return subjects.sort((a, b) =>
-    a.subjectCode.localeCompare(b.subjectCode)
-  );
+  const query = `
+    SELECT DISTINCT
+      subject_code as "subjectCode",
+      subject_number as "subjectNumber",
+      dept_code as "deptCode",
+      department,
+      cat_code as "catCode",
+      category
+    FROM papers
+    ${where}
+    ORDER BY "subjectCode"
+  `;
+
+  const res = await db.query(query, params);
+  return res.rows;
 }
 
 module.exports = {
