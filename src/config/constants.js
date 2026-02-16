@@ -28,7 +28,7 @@ const constants = {
 
   STORAGE_API_URL: getEnv("STORAGE_API_URL"),
 
-  SCRAPE_SCHEDULE: process.env.SCRAPE_SCHEDULE || "0 */6 * * *",
+  SCRAPE_SCHEDULE: process.env.SCRAPE_SCHEDULE || "0 0 * * *", // Daily at midnight UTC
 
   DATABASE_URL: getEnv("DATABASE_URL"),
 };

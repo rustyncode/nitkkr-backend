@@ -132,7 +132,7 @@ async function runScrapeAndStore(scraper) {
 }
 
 let _cronJob = null;
-function startScheduler(scraper, cronExpression = "0 */6 * * *") {
+function startScheduler(scraper, cronExpression = "0 0 * * *") { // Daily at midnight UTC
   try {
     const cron = require("node-cron");
     if (!cron.validate(cronExpression)) {
