@@ -28,8 +28,8 @@ app.use(helmet());
 app.use(compression());
 
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
+  windowMs: 5 * 60 * 1000, // 5 minutes
+  max: 500, // Allow more requests per IP
   message: "Too many requests from this IP, please try again later.",
 });
 app.use(limiter);
