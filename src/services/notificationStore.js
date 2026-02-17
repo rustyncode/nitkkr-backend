@@ -184,6 +184,18 @@ async function initializeStore(scraper) {
   return { hash: meta.hash, totalCount: meta.totalCount };
 }
 
+async function clearStore() {
+  try {
+    await db.pool.query("DELETE FROM notifications");
+    await db.pool.query("DELETE FROM meta WHERE key = 'notification_meta'");
+    console.log("[NotifStore] Store cleared.");
+    return true;
+  } catch (err) {
+    console.error("[NotifStore] Clear failed:", err.message);
+    return false;
+  }
+}
+
 module.exports = {
   updateStore,
   getDigest,
