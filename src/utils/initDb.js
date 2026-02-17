@@ -48,6 +48,33 @@ async function initDb() {
     );
   `;
 
+  const createNotificationsTableQuery = `
+    CREATE TABLE IF NOT EXISTS notifications (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      title TEXT NOT NULL,
+      date TEXT,
+      link TEXT,
+      category TEXT,
+      source TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    -- Unique constraint for deduplication
+    DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uni_notif_title_date') THEN
+        ALTER TABLE notifications ADD CONSTRAINT uni_notif_title_date UNIQUE (title, date);
+      END IF;
+    END $$;
+    -- Migration: Add source column if missing
+    ALTER TABLE notifications ADD COLUMN IF NOT EXISTS source TEXT;
+  `;
+
+  const createMetaTableQuery = `
+    CREATE TABLE IF NOT EXISTS meta (
+      key TEXT PRIMARY KEY,
+      value JSONB NOT NULL
+    );
+  `;
+
   const createIndexesQuery = `
     CREATE INDEX IF NOT EXISTS idx_papers_department ON papers(department);
     CREATE INDEX IF NOT EXISTS idx_papers_subject_code ON papers(subject_code);
@@ -62,14 +89,23 @@ async function initDb() {
     CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at);
   `;
 
+  const createNotificationIndexesQuery = `
+    CREATE INDEX IF NOT EXISTS idx_notifications_category ON notifications(category);
+    CREATE INDEX IF NOT EXISTS idx_notifications_date ON notifications(date);
+    CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at);
+  `;
+
   try {
     console.log("[InitDB] Checking/Creating tables...");
     await db.query(createTableQuery);
     await db.query(createJobsTableQuery);
+    await db.query(createNotificationsTableQuery);
+    await db.query(createMetaTableQuery);
 
     console.log("[InitDB] Checking/Creating indexes...");
     await db.query(createIndexesQuery);
     await db.query(createJobIndexesQuery);
+    await db.query(createNotificationIndexesQuery);
 
     console.log("[InitDB] Database initialization successful.");
   } catch (err) {

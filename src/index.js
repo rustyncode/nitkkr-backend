@@ -48,7 +48,7 @@ app.get("/", (_req, res) => {
   res.json({
     success: true,
     message: "NIT KKR PYQ API is running",
-    version: "1.2.0", // Bumped version for DB support
+    version: "1.2.1", // Fixed property and routing issues
     environment: constants.NODE_ENV,
     endpoints: {
       papers: "/api/papers",
@@ -95,50 +95,7 @@ app.get("/api/health", async (_req, res) => {
   });
 });
 
-app.get("/api/notifications/digest", async (_req, res) => {
-  try {
-    const digest = await notificationStore.getDigest();
-    res.json({ success: true, data: digest });
-  } catch (err) {
-    console.error("[Digest] Error:", err.message);
-    res.status(500).json({ success: false, message: "Failed to get notification digest", error: err.message });
-  }
-});
-
-app.get("/api/notifications/digest/full", async (_req, res) => {
-  try {
-    const fullStore = await notificationStore.getFullStore();
-    res.json({ success: true, data: fullStore });
-  } catch (err) {
-    console.error("[DigestFull] Error:", err.message);
-    res.status(500).json({ success: false, message: "Failed to get full notification store", error: err.message });
-  }
-});
-
-app.post("/api/notifications/scrape", async (_req, res) => {
-  try {
-    console.log("[API] Manual scrape triggered...");
-    const result = await notificationStore.runScrapeAndStore(scraper);
-    res.json({
-      success: true,
-      message: `Scrape complete. ${result.newCount} new notification(s) found.`,
-      data: {
-        newCount: result.newCount,
-        totalCount: result.totalCount,
-        hash: result.hash,
-        changed: result.changed,
-        newItems: (result.newItems || []).slice(0, 10).map((item) => ({
-          title: item.title,
-          date: item.date,
-          category: item.category,
-        })),
-      },
-    });
-  } catch (err) {
-    console.error("[API] Manual scrape failed:", err.message);
-    res.status(500).json({ success: false, message: "Scrape failed", error: err.message });
-  }
-});
+// Routes are handled by notificationRoutes.js (mounted at /api)
 
 app.delete("/api/notifications/store", async (_req, res) => {
   try {
@@ -204,6 +161,16 @@ const server = app.listen(PORT, async () => {
     notificationStore.startScheduler(scraper, constants.SCRAPE_SCHEDULE);
   } catch (err) {
     console.warn("[Startup] Notif scheduler failed:", err.message);
+  }
+
+  // 6. Initialize Job Store & Start Scheduler
+  try {
+    const jobScraper = require("./scrapers/jobScraper");
+    await jobStore.initializeStore(jobScraper);
+    jobStore.startScheduler(jobScraper, "0 2 * * *"); // Daily at 2 AM
+    console.log("[Startup] Job store and scheduler ready");
+  } catch (err) {
+    console.warn("[Startup] Job store init failed:", err.message);
   }
 
 });

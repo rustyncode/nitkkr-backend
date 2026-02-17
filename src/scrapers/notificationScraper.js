@@ -14,7 +14,7 @@ const NOTIFICATION_SOURCES = [
   { url: "https://nitkkr.ac.in/resultnotifications/", source: "results" },
   { url: "https://nitkkr.ac.in/exam-date-sheet/", source: "date_sheets" },
   { url: "https://nitkkr.ac.in/attendance-notices/", source: "attendance" },
-  { url: "https://nitkkr.ac.in/academic-calender/", source: "academic_calendar" },
+  { url: "https://nitkkr.ac.in/academic-calendar/", source: "academic_calendar" },
 ];
 const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
@@ -130,9 +130,11 @@ function isWithinDays(dateStr, days) {
 function categorize(title) {
   const t = title.toLowerCase();
 
+  if (t.includes("date sheet") || t.includes("exam date sheet")) {
+    return "Exam Date Sheets";
+  }
   if (
     t.includes("exam") ||
-    t.includes("date sheet") ||
     t.includes("sessional") ||
     t.includes("reappear") ||
     t.includes("detained") ||
@@ -247,6 +249,9 @@ function categorize(title) {
   ) {
     return "Administrative";
   }
+  if (t.includes("academic calendar") || (t.includes("academic") && t.includes("calendar"))) {
+    return "Academic Calendar";
+  }
   if (
     t.includes("timetable") ||
     t.includes("time table") ||
@@ -255,8 +260,7 @@ function categorize(title) {
     t.includes("minor degree") ||
     t.includes("semester") ||
     t.includes("handbook") ||
-    t.includes("syllabus") ||
-    t.includes("academic calendar")
+    t.includes("syllabus")
   ) {
     return "Academic";
   }
@@ -427,11 +431,74 @@ function extractWithRegex(sectionHtml, source, results) {
 function deduplicateItems(items) {
   const seen = new Map();
   for (const item of items) {
-    const key = item.title.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 80);
+    // Cleaner key: title + date
+    const key = (item.title + item.date).toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 150);
     if (!key || key.length < 5) continue;
-    if (!seen.has(key) || (!seen.get(key).link && item.link)) seen.set(key, item);
+
+    // Preference: item with link
+    if (!seen.has(key) || (!seen.get(key).link && item.link)) {
+      seen.set(key, item);
+    }
   }
   return Array.from(seen.values());
+}
+
+/**
+ * Robust generic parser for sub-pages that usually contain lists or tables
+ * without the "Announcements" or "Notifications" specific wrappers.
+ */
+function parseGenericListFromHtml(html, sourceName) {
+  const results = [];
+  const $ = cheerio.load(html);
+  let lastSeenDate = null;
+
+  // Strategy A: Iterate over elements that might contain items
+  $("tr, li, p, .elementor-post, .post-item").each(function () {
+    const el = $(this);
+    const text = el.text().trim();
+    if (text.length < 5) return;
+
+    // 1. Look for various date formats:
+    // Format 1: "February 12, 2026" or "12 February 2026"
+    let dateMatch = text.match(/(\w+)\s+(\d{1,2}),?\s+(\d{4})/) || text.match(/(\d{1,2})\s+(\w+),?\s+(\d{4})/);
+    // Format 2: "12.02.2026" or "12-02-2026"
+    if (!dateMatch) dateMatch = text.match(/(\d{1,2})[\.\-/](\d{1,2})[\.\-/](\d{4})/);
+
+    if (dateMatch) {
+      const parsed = parseDate(dateMatch[0]) || dateMatch[0].replace(/[\.\-]/g, "-");
+      if (parsed && parsed.length >= 10) lastSeenDate = parsed;
+    }
+
+    // 2. Find links in this element
+    const links = el.find("a");
+    if (links.length > 0) {
+      links.each(function () {
+        const linkEl = $(this);
+        let title = cleanTitle(linkEl.text());
+        let link = linkEl.attr("href") || null;
+
+        // Skip non-notice links
+        if (!link || link.includes("javascript:") || link.startsWith("#")) return;
+        if (title.length < 5) return;
+
+        // If no date found in this specific row, use the last seen date
+        // (but only if it's reasonably recent/valid for the context)
+        const itemDate = lastSeenDate || new Date().toISOString().split("T")[0];
+
+        if (link && !link.startsWith("http")) link = NITKKR_URL + (link.startsWith("/") ? "" : "/") + link;
+
+        results.push({
+          title,
+          date: itemDate,
+          link,
+          category: categorize(title),
+          source: sourceName
+        });
+      });
+    }
+  });
+
+  return results;
 }
 
 function sortByDateDesc(items) {
@@ -452,11 +519,26 @@ async function scrapeNotifications() {
       try {
         console.log(`[Scraper] Fetching ${site.source} from ${site.url}...`);
         const html = await fetchPage(site.url);
-        const announcements = parseAnnouncementsFromHtml(html);
-        const notifications = parseNotificationsFromHtml(html);
-        announcements.forEach(item => item.source = site.source);
-        notifications.forEach(item => item.source = site.source);
-        allRecords.push(...announcements, ...notifications);
+
+        // Homepage needs specific wrappers (Announcements/Notifications)
+        if (site.source === "homepage") {
+          const annals = parseAnnouncementsFromHtml(html);
+          const notifs = parseNotificationsFromHtml(html);
+          allRecords.push(...annals, ...notifs);
+        } else {
+          // Subpages are usually homogenous lists
+          const items = parseGenericListFromHtml(html, site.source);
+          if (items.length > 0) {
+            allRecords.push(...items);
+            console.log(`[Scraper] Found ${items.length} items from ${site.source}`);
+          } else {
+            // Last resort regex on full page
+            const regexItems = [];
+            extractWithRegex(html, site.source, regexItems);
+            allRecords.push(...regexItems);
+            console.log(`[Scraper] Regex fallback found ${regexItems.length} items from ${site.source}`);
+          }
+        }
       } catch (err) {
         console.error(`[Scraper] Failed to fetch ${site.source}:`, err.message);
       }

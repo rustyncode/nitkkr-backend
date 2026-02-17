@@ -245,10 +245,28 @@ async function getSubjectCodes({ deptCode, category }) {
   return res.rows;
 }
 
+async function getStoredMeta() {
+  try {
+    const res = await db.query("SELECT value FROM meta WHERE key = $1", ["paper_meta"]);
+    if (res.rows.length > 0) return res.rows[0].value;
+
+    // Fallback: If no meta, generate a simple hash based on count/max date
+    const countRes = await db.query("SELECT COUNT(*), MAX(uploaded_at) as max_date FROM papers");
+    const count = countRes.rows[0].count;
+    const maxDate = countRes.rows[0].max_date || "none";
+    const crypto = require("crypto");
+    const hash = crypto.createHash("md5").update(`${count}|${maxDate}`).digest("hex").slice(0, 16);
+    return { hash, lastScrapedAt: new Date().toISOString() };
+  } catch (err) {
+    return { hash: "paper-default" };
+  }
+}
+
 module.exports = {
   getPapers,
   getPaperById,
   getFilterOptions,
   getStats,
   getSubjectCodes,
+  getStoredMeta
 };

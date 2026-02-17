@@ -21,12 +21,13 @@ async function getStoredMeta() {
   }
 }
 
-async function getStoredNotifications() {
+async function getNotificationsFromDb(limit = 500) {
   try {
-    const res = await db.pool.query("SELECT * FROM notifications ORDER BY created_at DESC LIMIT 500");
-    return res.rows.map(row => ({
-      title: row.title, date: row.date, link: row.link, category: row.category
-    }));
+    const res = await db.pool.query(
+      "SELECT title, date, link, category, source, created_at FROM notifications ORDER BY date DESC, created_at DESC LIMIT $1",
+      [limit]
+    );
+    return res.rows;
   } catch (err) {
     console.error("[NotifStore] Failed to get notifications:", err.message);
     return [];
@@ -47,16 +48,25 @@ async function updateStore(freshItems) {
   const client = await db.pool.connect();
   try {
     await client.query("BEGIN");
+    let successCount = 0;
     for (const item of freshItems) {
-      const res = await client.query(
-        `INSERT INTO notifications (title, date, link, category, created_at)
-         VALUES ($1, $2, $3, $4, $5)
-         ON CONFLICT (title, date) DO NOTHING
-         RETURNING id`,
-        [item.title, item.date, item.link, item.category, now]
-      );
-      if (res.rowCount > 0) newItems.push(item);
+      try {
+        const res = await client.query(
+          `INSERT INTO notifications (title, date, link, category, source, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           ON CONFLICT (title, date) DO NOTHING
+           RETURNING id`,
+          [item.title, item.date, item.link, item.category, item.source || "general", now]
+        );
+        if (res.rowCount > 0) {
+          newItems.push(item);
+          successCount++;
+        }
+      } catch (e) {
+        console.error(`[NotifStore] Insert failed for "${item.title}":`, e.message);
+      }
     }
+    console.log(`[NotifStore] Attempted ${freshItems.length} inserts, ${successCount} new items added.`);
     const countRes = await client.query("SELECT COUNT(*) FROM notifications");
     const totalCount = parseInt(countRes.rows[0].count, 10);
     const metaPayload = {
@@ -107,26 +117,39 @@ async function getFullStore() {
   };
 }
 
-async function clearStore() {
+async function cleanupOldNotifications(days = 30) {
   try {
-    await db.pool.query("TRUNCATE TABLE notifications");
-    await db.pool.query("DELETE FROM meta WHERE key = 'notification_meta'");
-    console.log("[NotifStore] DB Cleared");
-    return true;
-  } catch (e) {
-    console.error(e);
-    return false;
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - days);
+    const dateStr = cutoffDate.toISOString().split("T")[0]; // YYYY-MM-DD
+
+    console.log(`[NotifStore] Cleaning up notifications older than ${dateStr}...`);
+    const res = await db.pool.query(
+      "DELETE FROM notifications WHERE date < $1",
+      [dateStr]
+    );
+    console.log(`[NotifStore] Deleted ${res.rowCount} old notifications.`);
+    return res.rowCount;
+  } catch (err) {
+    console.error("[NotifStore] Cleanup failed:", err.message);
+    return 0;
   }
 }
 
 async function runScrapeAndStore(scraper) {
   try {
+    // 1. Run cleanup
+    await cleanupOldNotifications(30);
+
+    // 2. Scrape
     if (scraper.invalidateCache) scraper.invalidateCache();
     const data = await scraper.scrapeNotifications();
     const allItems = [...(data.announcements || []), ...(data.notifications || [])];
+
+    // 3. Update store
     return await updateStore(allItems);
   } catch (err) {
-    console.error("[NotifStore] Scrape failed:", err.message);
+    console.error("[NotifStore] Scrape/Store failed:", err.message);
     return { newCount: 0, error: err.message };
   }
 }
@@ -153,6 +176,7 @@ function startScheduler(scraper, cronExpression = "0 0 * * *") { // Daily at mid
 async function initializeStore(scraper) {
   await db.initDB();
   const meta = await getStoredMeta();
+  // Only scrape if DB is totally empty
   if (!meta.hash || meta.hash === "empty") {
     console.log("[NotifStore] Empty DB, initial scrape...");
     return await runScrapeAndStore(scraper);
@@ -168,5 +192,7 @@ module.exports = {
   startScheduler,
   runScrapeAndStore,
   initializeStore,
-  getStoredMeta
+  getNotificationsFromDb,
+  getStoredMeta,
+  cleanupOldNotifications
 };

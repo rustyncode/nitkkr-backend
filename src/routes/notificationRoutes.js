@@ -14,4 +14,10 @@ router.get("/notifications/categories", notificationController.getCategories);
 // POST /api/notifications/refresh — force-refresh the scraped notification cache
 router.post("/notifications/refresh", notificationController.refreshNotifications);
 
+// GET /api/notifications/digest — lightweight hash check
+router.get("/notifications/digest", notificationController.getDigest);
+
+// GET /api/notifications/digest/full — full store fetch
+router.get("/notifications/digest/full", notificationController.getDigestFull);
+
 module.exports = router;

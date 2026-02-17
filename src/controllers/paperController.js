@@ -150,9 +150,18 @@ async function getSubjectCodes(req, res) {
 // GET /api/papers/all — return every paper in one shot (for client-side caching)
 async function getAllPapers(req, res) {
   try {
-    // Fetch all papers without pagination (high limit)
-    // NOTE: This might be heavy for DB if thousands of records.
-    // For now, mirroring previous behavior.
+    const clientHash = req.query.clientHash;
+    const meta = await paperService.getStoredMeta();
+
+    if (clientHash && clientHash === meta.hash) {
+      return res.json({
+        success: true,
+        hasUpdates: false,
+        hash: meta.hash,
+        lastFetched: meta.lastScrapedAt,
+      });
+    }
+
     const result = await paperService.getPapers({
       limit: 10000,
       page: 1
@@ -161,10 +170,12 @@ async function getAllPapers(req, res) {
 
     return res.json({
       success: true,
+      hasUpdates: true,
       data: result.records,
+      hash: meta.hash,
       total: result.pagination.totalRecords,
       filterOptions: filterOptions,
-      extractedAt: new Date(), // DB doesn't have a single extraction time, returning now()
+      extractedAt: meta.lastScrapedAt || new Date(),
     });
   } catch (err) {
     console.error("[PaperController] getAllPapers error:", err.message);
