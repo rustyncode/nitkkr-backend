@@ -106,7 +106,7 @@ async function getDigest() {
 }
 
 async function getFullStore() {
-  const items = await getNotificationsFromDb(1000);
+  const items = await getNotificationsFromDb(100);
   const meta = await getStoredMeta();
   return {
     items: items,
