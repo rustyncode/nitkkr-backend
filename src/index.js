@@ -12,10 +12,12 @@ const initDb = require("./utils/initDb");
 const syncService = require("./services/syncService");
 const paperRoutes = require("./routes/paperRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
+const jobRoutes = require("./routes/jobRoutes");
 
 const { notFoundHandler, globalErrorHandler } = require("./middleware/errorHandler");
 const scraper = require("./scrapers/notificationScraper");
 const notificationStore = require("./services/notificationStore");
+const jobStore = require("./services/jobStore");
 
 const app = express();
 
@@ -61,6 +63,7 @@ app.get("/", (_req, res) => {
       refreshNotifications: "POST /api/notifications/refresh",
       digest: "/api/notifications/digest",
       digestFull: "/api/notifications/digest/full",
+      jobs: "/api/jobs"
     },
   });
 });
@@ -75,7 +78,7 @@ app.get("/api/health", async (_req, res) => {
     dbStatus = `error: ${err.message}`;
   }
 
-  const storeMeta = notificationStore.getStoredMeta();
+  const storeMeta = await notificationStore.getStoredMeta();
 
   res.json({
     success: true,
@@ -92,9 +95,9 @@ app.get("/api/health", async (_req, res) => {
   });
 });
 
-app.get("/api/notifications/digest", (_req, res) => {
+app.get("/api/notifications/digest", async (_req, res) => {
   try {
-    const digest = notificationStore.getDigest();
+    const digest = await notificationStore.getDigest();
     res.json({ success: true, data: digest });
   } catch (err) {
     console.error("[Digest] Error:", err.message);
@@ -102,9 +105,9 @@ app.get("/api/notifications/digest", (_req, res) => {
   }
 });
 
-app.get("/api/notifications/digest/full", (_req, res) => {
+app.get("/api/notifications/digest/full", async (_req, res) => {
   try {
-    const fullStore = notificationStore.getFullStore();
+    const fullStore = await notificationStore.getFullStore();
     res.json({ success: true, data: fullStore });
   } catch (err) {
     console.error("[DigestFull] Error:", err.message);
@@ -137,9 +140,9 @@ app.post("/api/notifications/scrape", async (_req, res) => {
   }
 });
 
-app.delete("/api/notifications/store", (_req, res) => {
+app.delete("/api/notifications/store", async (_req, res) => {
   try {
-    notificationStore.clearStore();
+    await notificationStore.clearStore();
     res.json({ success: true, message: "Notification store cleared." });
   } catch (err) {
     res.status(500).json({ success: false, message: "Failed to clear store", error: err.message });
@@ -148,6 +151,7 @@ app.delete("/api/notifications/store", (_req, res) => {
 
 app.use("/api", paperRoutes);
 app.use("/api", notificationRoutes);
+app.use("/api", jobRoutes);
 
 app.use(notFoundHandler);
 app.use(globalErrorHandler);
@@ -199,8 +203,9 @@ const server = app.listen(PORT, async () => {
   try {
     notificationStore.startScheduler(scraper, constants.SCRAPE_SCHEDULE);
   } catch (err) {
-    console.warn("[Startup] Scheduler start failed:", err.message);
+    console.warn("[Startup] Notif scheduler failed:", err.message);
   }
+
 });
 
 module.exports = app;

@@ -1,7 +1,7 @@
 const db = require("../config/db");
 
 async function initDb() {
-    const createTableQuery = `
+  const createTableQuery = `
     CREATE TABLE IF NOT EXISTS papers (
       id TEXT PRIMARY KEY,
       subject_code TEXT,
@@ -30,7 +30,25 @@ async function initDb() {
     );
   `;
 
-    const createIndexesQuery = `
+  const createJobsTableQuery = `
+    CREATE TABLE IF NOT EXISTS jobs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      title TEXT NOT NULL,
+      company TEXT NOT NULL,
+      location TEXT,
+      stipend TEXT,
+      deadline TEXT,
+      type TEXT,
+      link TEXT NOT NULL,
+      category TEXT,
+      source TEXT,
+      is_active BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `;
+
+  const createIndexesQuery = `
     CREATE INDEX IF NOT EXISTS idx_papers_department ON papers(department);
     CREATE INDEX IF NOT EXISTS idx_papers_subject_code ON papers(subject_code);
     CREATE INDEX IF NOT EXISTS idx_papers_year ON papers(year);
@@ -38,18 +56,26 @@ async function initDb() {
     CREATE INDEX IF NOT EXISTS idx_papers_search_text ON papers USING GIN (to_tsvector('english', search_text));
   `;
 
-    try {
-        console.log("[InitDB] Checking/Creating 'papers' table...");
-        await db.query(createTableQuery);
+  const createJobIndexesQuery = `
+    CREATE INDEX IF NOT EXISTS idx_jobs_company ON jobs(company);
+    CREATE INDEX IF NOT EXISTS idx_jobs_is_active ON jobs(is_active);
+    CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at);
+  `;
 
-        console.log("[InitDB] Checking/Creating indexes...");
-        await db.query(createIndexesQuery);
+  try {
+    console.log("[InitDB] Checking/Creating tables...");
+    await db.query(createTableQuery);
+    await db.query(createJobsTableQuery);
 
-        console.log("[InitDB] Database initialization successful.");
-    } catch (err) {
-        console.error("[InitDB] Error initializing database:", err);
-        throw err; // Re-throw to handle in startup
-    }
+    console.log("[InitDB] Checking/Creating indexes...");
+    await db.query(createIndexesQuery);
+    await db.query(createJobIndexesQuery);
+
+    console.log("[InitDB] Database initialization successful.");
+  } catch (err) {
+    console.error("[InitDB] Error initializing database:", err);
+    throw err;
+  }
 }
 
 module.exports = initDb;

@@ -7,6 +7,15 @@ const insecureAgent = new https.Agent({ rejectUnauthorized: false });
 // ─── Constants ──────────────────────────────────────────────
 
 const NITKKR_URL = "https://nitkkr.ac.in";
+const NOTIFICATION_SOURCES = [
+  { url: "https://nitkkr.ac.in", source: "homepage" },
+  { url: "https://nitkkr.ac.in/academic-notifications/", source: "academic_notices" },
+  { url: "https://nitkkr.ac.in/exam-notifications/", source: "exam_notices" },
+  { url: "https://nitkkr.ac.in/resultnotifications/", source: "results" },
+  { url: "https://nitkkr.ac.in/exam-date-sheet/", source: "date_sheets" },
+  { url: "https://nitkkr.ac.in/attendance-notices/", source: "attendance" },
+  { url: "https://nitkkr.ac.in/academic-calender/", source: "academic_calendar" },
+];
 const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 // ─── In-memory cache ────────────────────────────────────────
@@ -132,12 +141,29 @@ function categorize(title) {
     return "Examination";
   }
   if (
+    t.includes("result") ||
+    t.includes("marks") ||
+    t.includes("performance") ||
+    t.includes("grade card")
+  ) {
+    return "Results";
+  }
+  if (
     t.includes("scholarship") ||
     t.includes("fellowship") ||
     t.includes("stipend") ||
     t.includes("merit scholarship")
   ) {
     return "Scholarship";
+  }
+  if (
+    t.includes("placement") ||
+    t.includes("job") ||
+    t.includes("campus drive") ||
+    t.includes("career") ||
+    t.includes("offer")
+  ) {
+    return "Placements";
   }
   if (
     t.includes("recruitment") ||
@@ -150,6 +176,7 @@ function categorize(title) {
     t.includes("project staff") ||
     t.includes("registrar") ||
     t.includes("research fellow") ||
+    t.includes("project associate") ||
     t.includes("project associate") ||
     t.includes("research assistant") ||
     t.includes("research intern")
@@ -175,6 +202,15 @@ function categorize(title) {
     t.includes("global alumni day")
   ) {
     return "Events";
+  }
+  if (
+    t.includes("cultural") ||
+    t.includes("techfest") ||
+    t.includes("confluence") ||
+    t.includes("sports") ||
+    t.includes("gymkhana")
+  ) {
+    return "Sports & Culture";
   }
   if (
     t.includes("stc") ||
@@ -242,16 +278,11 @@ function parseAnnouncementsFromHtml(html) {
   const $ = cheerio.load(html);
 
   // Strategy 1: Look for the "Announcements" heading, then find its parent container
-  // The NIT KKR website uses WordPress-style layout with sections
-  // Announcements are listed as items with dates and titles
-
-  // Find all elements that contain "Announcements" as a heading
   let announcementSection = null;
 
   $("h3, h2, h4, .widget-title, .section-title").each(function () {
     const text = $(this).text().trim();
     if (text === "Announcements" || text.includes("Announcements")) {
-      // Get the parent container that holds the list
       announcementSection = $(this).closest(
         "section, .widget, .elementor-widget, .elementor-section, .elementor-column, [class*=announcement], [class*=widget]",
       );
@@ -263,207 +294,10 @@ function parseAnnouncementsFromHtml(html) {
   });
 
   if (announcementSection && announcementSection.length > 0) {
-    // Find all list items or divs within the section that have date-title pairs
-    // Try multiple selectors that might match the structure
-    const itemSelectors = [
-      "li",
-      ".elementor-post",
-      ".post-item",
-      "[class*=item]",
-      ".entry",
-      "article",
-    ];
-
+    const itemSelectors = ["li", ".elementor-post", ".post-item", "[class*=item]", ".entry", "article"];
     let items = $();
-
     for (const sel of itemSelectors) {
       items = announcementSection.find(sel);
-      if (items.length > 3) break; // found meaningful items
-    }
-
-    if (items.length > 0) {
-      items.each(function () {
-        const el = $(this);
-        const fullText = el.text().trim();
-        const allLinks = el.find("a");
-
-        // Try to find the date in this item
-        let dateStr = null;
-        let title = "";
-        let link = null;
-
-        // Check for a date match in the text
-        const dateMatch = fullText.match(/(\w+)\s+(\d{1,2}),?\s+(\d{4})/);
-        if (dateMatch) {
-          dateStr = parseDate(dateMatch[0]);
-
-          // The title is usually the rest of the text after the date, or in an anchor
-          if (allLinks.length > 0) {
-            // Prefer the link text as title
-            const mainLink = allLinks.first();
-            title = cleanTitle(mainLink.text());
-            link = mainLink.attr("href") || null;
-          } else {
-            // Remove the date from the full text to get the title
-            title = cleanTitle(fullText.replace(dateMatch[0], "").trim());
-          }
-        }
-
-        // Resolve relative URLs
-        if (link && link.startsWith("/")) {
-          link = NITKKR_URL + link;
-        }
-
-        if (dateStr && title && title.length > 5) {
-          results.push({
-            title,
-            date: dateStr,
-            link,
-            category: categorize(title),
-            source: "announcements",
-          });
-        }
-      });
-    }
-  }
-
-  // Strategy 2 (fallback): Use regex-based extraction on the announcements portion of HTML
-  if (results.length === 0) {
-    const announcementsIdx = html.indexOf("Announcements");
-    const notificationsIdx = html.indexOf("Notifications");
-
-    let sectionHtml = "";
-    if (
-      announcementsIdx !== -1 &&
-      notificationsIdx !== -1 &&
-      notificationsIdx > announcementsIdx
-    ) {
-      sectionHtml = html.substring(announcementsIdx, notificationsIdx);
-    } else if (announcementsIdx !== -1) {
-      sectionHtml = html.substring(
-        announcementsIdx,
-        Math.min(announcementsIdx + 50000, html.length),
-      );
-    }
-
-    if (sectionHtml) {
-      const $section = cheerio.load(sectionHtml);
-
-      // Look for patterns: date elements followed by title/link elements
-      // Try finding all text that looks like dates
-      $section("*").each(function () {
-        const el = $section(this);
-        const text = el.text().trim();
-        const dateMatch = text.match(/^(\w+\s+\d{1,2},?\s+\d{4})$/);
-
-        if (dateMatch) {
-          const dateStr = parseDate(dateMatch[1]);
-          if (!dateStr) return;
-
-          // Find the next sibling or following element with the title
-          let titleEl = el.next();
-          let title = "";
-          let link = null;
-
-          // Try a few next siblings
-          for (let i = 0; i < 5 && titleEl.length > 0; i++) {
-            const titleText = cleanTitle(titleEl.text());
-            const anchor = titleEl.find("a").first();
-
-            if (
-              titleText &&
-              titleText.length > 5 &&
-              !titleText.match(/^\w+\s+\d{1,2},?\s+\d{4}$/)
-            ) {
-              title = titleText;
-              if (anchor.length > 0) {
-                title = cleanTitle(anchor.text()) || title;
-                link = anchor.attr("href") || null;
-              }
-              break;
-            }
-            titleEl = titleEl.next();
-          }
-
-          if (link && link.startsWith("/")) {
-            link = NITKKR_URL + link;
-          }
-
-          if (title && title.length > 5) {
-            results.push({
-              title,
-              date: dateStr,
-              link,
-              category: categorize(title),
-              source: "announcements",
-            });
-          }
-        }
-      });
-    }
-  }
-
-  // Strategy 3 (final fallback): brute-force regex on raw HTML
-  if (results.length === 0) {
-    const announcementsIdx = html.indexOf("Announcements");
-    let notificationsIdx = html.indexOf(
-      "Notifications",
-      announcementsIdx > -1 ? announcementsIdx : 0,
-    );
-    if (notificationsIdx === -1) notificationsIdx = html.length;
-
-    const sectionHtml =
-      announcementsIdx !== -1
-        ? html.substring(announcementsIdx, notificationsIdx)
-        : "";
-
-    if (sectionHtml) {
-      extractWithRegex(sectionHtml, "announcements", results);
-    }
-  }
-
-  return results;
-}
-
-// ─── Parse notifications from the NIT KKR homepage using cheerio ──
-
-function parseNotificationsFromHtml(html) {
-  const results = [];
-  const $ = cheerio.load(html);
-
-  // Find the Notifications section
-  let notificationSection = null;
-
-  $("h3, h2, h4, .widget-title, .section-title").each(function () {
-    const text = $(this).text().trim();
-    if (
-      text === "Notifications" ||
-      (text.includes("Notifications") && !text.includes("Announcements"))
-    ) {
-      notificationSection = $(this).closest(
-        "section, .widget, .elementor-widget, .elementor-section, .elementor-column, [class*=notification], [class*=widget]",
-      );
-      if (!notificationSection || notificationSection.length === 0) {
-        notificationSection = $(this).parent().parent();
-      }
-      return false; // break
-    }
-  });
-
-  if (notificationSection && notificationSection.length > 0) {
-    const itemSelectors = [
-      "li",
-      ".elementor-post",
-      ".post-item",
-      "[class*=item]",
-      ".entry",
-      "article",
-    ];
-
-    let items = $();
-
-    for (const sel of itemSelectors) {
-      items = notificationSection.find(sel);
       if (items.length > 3) break;
     }
 
@@ -480,7 +314,6 @@ function parseNotificationsFromHtml(html) {
         const dateMatch = fullText.match(/(\w+)\s+(\d{1,2}),?\s+(\d{4})/);
         if (dateMatch) {
           dateStr = parseDate(dateMatch[0]);
-
           if (allLinks.length > 0) {
             const mainLink = allLinks.first();
             title = cleanTitle(mainLink.text());
@@ -490,78 +323,82 @@ function parseNotificationsFromHtml(html) {
           }
         }
 
-        if (link && link.startsWith("/")) {
-          link = NITKKR_URL + link;
-        }
+        if (link && link.startsWith("/")) link = NITKKR_URL + link;
 
         if (dateStr && title && title.length > 5) {
-          results.push({
-            title,
-            date: dateStr,
-            link,
-            category: categorize(title),
-            source: "notifications",
-          });
+          results.push({ title, date: dateStr, link, category: categorize(title), source: "announcements" });
         }
       });
     }
   }
 
-  // Strategy 2 (fallback): regex on the notifications portion
+  // Fallback regex extraction
   if (results.length === 0) {
-    const notificationsIdx = html.lastIndexOf("Notifications");
-    if (notificationsIdx !== -1) {
-      const sectionHtml = html.substring(notificationsIdx);
-      const $section = cheerio.load(sectionHtml);
+    const announcementsIdx = html.indexOf("Announcements");
+    if (announcementsIdx !== -1) {
+      const sectionHtml = html.substring(announcementsIdx, announcementsIdx + 50000);
+      extractWithRegex(sectionHtml, "announcements", results);
+    }
+  }
 
-      $section("li").each(function () {
-        const el = $section(this);
+  return results;
+}
+
+// ─── Parse notifications from the NIT KKR homepage using cheerio ──
+
+function parseNotificationsFromHtml(html) {
+  const results = [];
+  const $ = cheerio.load(html);
+
+  let notificationSection = null;
+  $("h3, h2, h4, .widget-title, .section-title").each(function () {
+    const text = $(this).text().trim();
+    if (text === "Notifications" || (text.includes("Notifications") && !text.includes("Announcements"))) {
+      notificationSection = $(this).closest("section, .widget, .elementor-widget, .elementor-section, .elementor-column, [class*=notification], [class*=widget]");
+      if (!notificationSection || notificationSection.length === 0) notificationSection = $(this).parent().parent();
+      return false;
+    }
+  });
+
+  if (notificationSection && notificationSection.length > 0) {
+    const itemSelectors = ["li", ".elementor-post", ".post-item", "[class*=item]", ".entry", "article"];
+    let items = $();
+    for (const sel of itemSelectors) {
+      items = notificationSection.find(sel);
+      if (items.length > 3) break;
+    }
+
+    if (items.length > 0) {
+      items.each(function () {
+        const el = $(this);
         const fullText = el.text().trim();
-        const anchor = el.find("a").first();
+        const allLinks = el.find("a");
+        let dateStr = null;
+        let title = "";
+        let link = null;
 
         const dateMatch = fullText.match(/(\w+)\s+(\d{1,2}),?\s+(\d{4})/);
         if (dateMatch) {
-          const dateStr = parseDate(dateMatch[0]);
-          if (!dateStr) return;
-
-          let title = "";
-          let link = null;
-
-          if (anchor.length > 0) {
-            title = cleanTitle(anchor.text());
-            link = anchor.attr("href") || null;
+          dateStr = parseDate(dateMatch[0]);
+          if (allLinks.length > 0) {
+            const mainLink = allLinks.first();
+            title = cleanTitle(mainLink.text());
+            link = mainLink.attr("href") || null;
           } else {
             title = cleanTitle(fullText.replace(dateMatch[0], "").trim());
           }
-
-          if (link && link.startsWith("/")) {
-            link = NITKKR_URL + link;
-          }
-
-          if (title && title.length > 5) {
-            results.push({
-              title,
-              date: dateStr,
-              link,
-              category: categorize(title),
-              source: "notifications",
-            });
-          }
+        }
+        if (link && link.startsWith("/")) link = NITKKR_URL + link;
+        if (dateStr && title && title.length > 5) {
+          results.push({ title, date: dateStr, link, category: categorize(title), source: "notifications" });
         }
       });
     }
   }
 
-  // Strategy 3 (final fallback): brute-force regex
   if (results.length === 0) {
-    // Find the last occurrence of "Notifications" heading
     const notificationsIdx = html.lastIndexOf("Notifications");
-    const sectionHtml =
-      notificationsIdx !== -1 ? html.substring(notificationsIdx) : "";
-
-    if (sectionHtml) {
-      extractWithRegex(sectionHtml, "notifications", results);
-    }
+    if (notificationsIdx !== -1) extractWithRegex(html.substring(notificationsIdx), "notifications", results);
   }
 
   return results;
@@ -570,260 +407,110 @@ function parseNotificationsFromHtml(html) {
 // ─── Regex-based fallback extractor ─────────────────────────
 
 function extractWithRegex(sectionHtml, source, results) {
-  // Match: date followed by any tags/whitespace and then title text
   const pattern = /(\w+\s+\d{1,2},?\s+\d{4})\s*(?:<[^>]*>\s*)*([^<]{10,})/g;
-
   let match;
   while ((match = pattern.exec(sectionHtml)) !== null) {
     const dateStr = parseDate(match[1]);
-    const rawTitle = cleanTitle(
-      match[2]
-        .replace(/<[^>]*>/g, "")
-        .replace(/&amp;/g, "&")
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-        .replace(/&quot;/g, '"')
-        .replace(/&#8217;/g, "\u2019")
-        .replace(/&#8216;/g, "\u2018")
-        .replace(/&#8220;/g, "\u201C")
-        .replace(/&#8221;/g, "\u201D")
-        .replace(/&#8211;/g, "\u2013")
-        .replace(/&#8212;/g, "\u2014")
-        .replace(/&#038;/g, "&")
-        .replace(/&nbsp;/g, " ")
-        .replace(/&#(\d+);/g, (_, num) => String.fromCharCode(Number(num))),
-    );
-
+    const rawTitle = cleanTitle(match[2].replace(/<[^>]*>/g, ""));
     if (dateStr && rawTitle.length > 5) {
-      // Try to find a link near this content
-      const contextStart = Math.max(0, match.index - 500);
-      const contextEnd = Math.min(
-        sectionHtml.length,
-        match.index + match[0].length + 500,
-      );
-      const context = sectionHtml.substring(contextStart, contextEnd);
+      const context = sectionHtml.substring(Math.max(0, match.index - 500), match.index + 1000);
       const linkMatch = context.match(/href=["']([^"']+)["']/);
-      let link = null;
-      if (linkMatch) {
-        link = linkMatch[1];
-        if (link.startsWith("/")) {
-          link = NITKKR_URL + link;
-        }
-      }
-
-      results.push({
-        title: rawTitle,
-        date: dateStr,
-        link,
-        category: categorize(rawTitle),
-        source,
-      });
+      let link = linkMatch ? linkMatch[1] : null;
+      if (link && link.startsWith("/")) link = NITKKR_URL + link;
+      results.push({ title: rawTitle, date: dateStr, link, category: categorize(rawTitle), source });
     }
   }
 }
 
-// ─── Deduplicate by title similarity ────────────────────────
+// ─── Deduplicate ────────────────────────────────────────────
 
 function deduplicateItems(items) {
   const seen = new Map();
-
   for (const item of items) {
-    const key = item.title
-      .toLowerCase()
-      .replace(/[^a-z0-9]/g, "")
-      .slice(0, 80);
-
+    const key = item.title.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 80);
     if (!key || key.length < 5) continue;
-
-    if (!seen.has(key)) {
-      seen.set(key, item);
-    } else {
-      // Keep the one with a link, or the one from "announcements" source
-      const existing = seen.get(key);
-      if (!existing.link && item.link) {
-        seen.set(key, item);
-      }
-    }
+    if (!seen.has(key) || (!seen.get(key).link && item.link)) seen.set(key, item);
   }
-
   return Array.from(seen.values());
 }
 
-// ─── Sort by date descending ────────────────────────────────
-
 function sortByDateDesc(items) {
-  return items.sort((a, b) => {
-    if (!a.date) return 1;
-    if (!b.date) return -1;
-    return b.date.localeCompare(a.date);
-  });
+  return items.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
 }
 
 // ─── Main scrape function ───────────────────────────────────
 
 async function scrapeNotifications() {
-  // Return cache if fresh
   const now = Date.now();
-  if (
-    cachedAnnouncements &&
-    cachedNotifications &&
-    now - lastFetchTime < CACHE_TTL_MS
-  ) {
-    return {
-      announcements: cachedAnnouncements,
-      notifications: cachedNotifications,
-      fromCache: true,
-      lastFetched: new Date(lastFetchTime).toISOString(),
-    };
+  if (cachedAnnouncements && cachedNotifications && now - lastFetchTime < CACHE_TTL_MS) {
+    return { announcements: cachedAnnouncements, notifications: cachedNotifications, fromCache: true, lastFetched: new Date(lastFetchTime).toISOString() };
   }
 
-  console.log("[Scraper] Fetching NIT KKR homepage...");
-
   try {
-    const html = await fetchPage(NITKKR_URL);
-    console.log(
-      `[Scraper] Fetched ${(html.length / 1024).toFixed(1)} KB of HTML`,
-    );
+    const allRecords = [];
+    for (const site of NOTIFICATION_SOURCES) {
+      try {
+        console.log(`[Scraper] Fetching ${site.source} from ${site.url}...`);
+        const html = await fetchPage(site.url);
+        const announcements = parseAnnouncementsFromHtml(html);
+        const notifications = parseNotificationsFromHtml(html);
+        announcements.forEach(item => item.source = site.source);
+        notifications.forEach(item => item.source = site.source);
+        allRecords.push(...announcements, ...notifications);
+      } catch (err) {
+        console.error(`[Scraper] Failed to fetch ${site.source}:`, err.message);
+      }
+    }
 
-    // Parse both sections
-    const rawAnnouncements = parseAnnouncementsFromHtml(html);
-    const rawNotifications = parseNotificationsFromHtml(html);
+    const deduplicated = deduplicateItems(allRecords);
+    const announcements = deduplicated.filter(item => item.source === "homepage" || item.source === "announcements");
+    const notifications = deduplicated.filter(item => !announcements.includes(item));
 
-    console.log(
-      `[Scraper] Raw parsed: ${rawAnnouncements.length} announcements, ${rawNotifications.length} notifications`,
-    );
-
-    // Deduplicate within each section
-    const announcements = deduplicateItems(rawAnnouncements);
-    const notifications = deduplicateItems(rawNotifications);
-
-    // Sort by date descending
     sortByDateDesc(announcements);
     sortByDateDesc(notifications);
 
-    // Add IDs
-    announcements.forEach((item, i) => {
-      item.id = `ann-${item.date}-${i}`;
-    });
-    notifications.forEach((item, i) => {
-      item.id = `notif-${item.date}-${i}`;
-    });
+    announcements.forEach((item, i) => item.id = `ann-${item.date}-${i}`);
+    notifications.forEach((item, i) => item.id = `notif-${item.date}-${i}`);
 
-    // Cache
     cachedAnnouncements = announcements;
     cachedNotifications = notifications;
     lastFetchTime = Date.now();
 
-    console.log(
-      `[Scraper] Final: ${announcements.length} announcements, ${notifications.length} notifications`,
-    );
-
-    return {
-      announcements,
-      notifications,
-      fromCache: false,
-      lastFetched: new Date(lastFetchTime).toISOString(),
-    };
+    return { announcements, notifications, fromCache: false, lastFetched: new Date(lastFetchTime).toISOString() };
   } catch (err) {
-    console.error("[Scraper] Error:", err.message);
-
-    // Return stale cache if available
-    if (cachedAnnouncements || cachedNotifications) {
-      console.log("[Scraper] Returning stale cache");
-      return {
-        announcements: cachedAnnouncements || [],
-        notifications: cachedNotifications || [],
-        fromCache: true,
-        stale: true,
-        lastFetched: lastFetchTime
-          ? new Date(lastFetchTime).toISOString()
-          : null,
-        error: err.message,
-      };
-    }
-
+    console.error("[Scraper] Main error:", err.message);
+    if (cachedAnnouncements) return { announcements: cachedAnnouncements, notifications: cachedNotifications, fromCache: true, stale: true, error: err.message };
     throw err;
   }
 }
 
-// ─── Get recent items (last N days) ─────────────────────────
-
 async function getRecentNotifications(days = 30) {
   const data = await scrapeNotifications();
-
-  const recentAnnouncements = data.announcements.filter((item) =>
-    isWithinDays(item.date, days),
-  );
-  const recentNotifications = data.notifications.filter((item) =>
-    isWithinDays(item.date, days),
-  );
-
-  // Merge and deduplicate across both sources
-  const allRecent = deduplicateItems([
-    ...recentAnnouncements,
-    ...recentNotifications,
-  ]);
-
-  // Sort newest first
+  const allRecent = deduplicateItems([...data.announcements, ...data.notifications]).filter(item => isWithinDays(item.date, days));
   sortByDateDesc(allRecent);
-
-  // Re-assign IDs after merge
-  allRecent.forEach((item, i) => {
-    item.id = `recent-${item.date}-${i}`;
-  });
-
-  return {
-    items: allRecent,
-    total: allRecent.length,
-    days,
-    fromCache: data.fromCache,
-    lastFetched: data.lastFetched,
-  };
+  allRecent.forEach((item, i) => item.id = `recent-${item.date}-${i}`);
+  return { items: allRecent, total: allRecent.length, days, fromCache: data.fromCache, lastFetched: data.lastFetched };
 }
-
-// ─── Get all scraped data ───────────────────────────────────
 
 async function getAllNotifications() {
   const data = await scrapeNotifications();
-
-  // Merge all into one sorted list
   const all = deduplicateItems([...data.announcements, ...data.notifications]);
-
   sortByDateDesc(all);
-
-  all.forEach((item, i) => {
-    item.id = `all-${item.date}-${i}`;
-  });
-
-  return {
-    items: all,
-    total: all.length,
-    announcements: data.announcements,
-    notifications: data.notifications,
-    announcementsCount: data.announcements.length,
-    notificationsCount: data.notifications.length,
-    fromCache: data.fromCache,
-    lastFetched: data.lastFetched,
-  };
+  all.forEach((item, i) => item.id = `all-${item.date}-${i}`);
+  return { items: all, total: all.length, announcements: data.announcements, notifications: data.notifications, fromCache: data.fromCache, lastFetched: data.lastFetched };
 }
-
-// ─── Invalidate cache ───────────────────────────────────────
 
 function invalidateCache() {
   cachedAnnouncements = null;
   cachedNotifications = null;
   lastFetchTime = 0;
-  console.log("[Scraper] Cache invalidated");
 }
-
-// ─── Exports ────────────────────────────────────────────────
 
 module.exports = {
   scrapeNotifications,
   getRecentNotifications,
   getAllNotifications,
   invalidateCache,
-  // Exposed for testing
   parseDate,
   isWithinDays,
   categorize,
