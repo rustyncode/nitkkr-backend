@@ -31,6 +31,11 @@ const constants = {
   SCRAPE_SCHEDULE: process.env.SCRAPE_SCHEDULE || "0 0 * * *", // Daily at midnight UTC
 
   DATABASE_URL: getEnv("DATABASE_URL"),
+
+  // Secret key for admin/destructive endpoints.
+  // Set ADMIN_SECRET in your .env and Vercel environment variables.
+  // Pass as: x-admin-key: <secret> header on admin requests.
+  ADMIN_SECRET: process.env.ADMIN_SECRET || null,
 };
 
 module.exports = constants;

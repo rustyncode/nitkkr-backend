@@ -2,16 +2,22 @@ const { Pool } = require("pg");
 const constants = require("./constants");
 
 // Create a new pool using the connection string from environment variables
-// Strip sslmode param cleanly from the connection URL to avoid pg v9 SSL deprecation warning
+// Strip pg-incompatible params (sslmode, channel_binding) from the URL.
+// SSL is configured separately via the ssl option below.
 function cleanDbUrl(url) {
     if (!url) return url;
     try {
         const u = new URL(url);
         u.searchParams.delete("sslmode");
+        u.searchParams.delete("channel_binding");
         return u.toString();
     } catch {
         // Fallback: regex strip for non-standard URLs
-        return url.replace(/[?&]sslmode=[^&]*/g, "").replace(/\?&/, "?").replace(/[?&]$/, "");
+        return url
+            .replace(/[?&]sslmode=[^&]*/g, "")
+            .replace(/[?&]channel_binding=[^&]*/g, "")
+            .replace(/\?&/, "?")
+            .replace(/[?&]$/, "");
     }
 }
 

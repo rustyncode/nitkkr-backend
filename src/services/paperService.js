@@ -14,12 +14,13 @@ function buildWhereClause(filters, query) {
   const values = [];
   let paramIdx = 1;
 
-  // Search Query (Full Text Search + manual fallback)
+  // Search Query (Full Text Search)
   if (query) {
     const normalized = normalizeQuery(query);
-    // Simple ILIKE for broad matching on generated search_text column
-    conditions.push(`search_text ILIKE $${paramIdx++}`);
-    values.push(`%${normalized}%`);
+    // Use Postgres Full-Text Search operator @@
+    // Values are passed as plainto_tsquery for natural language search
+    conditions.push(`to_tsvector('english', search_text) @@ plainto_tsquery('english', $${paramIdx++})`);
+    values.push(normalized);
   }
 
   // Exact filters
@@ -97,7 +98,10 @@ async function getPapers({ query, filters, page, limit, sortBy, sortOrder }) {
     uploadedAt: "uploaded_at",
     fileSizeKB: "file_size",
   };
-  const sortField = validSortFields[sortBy] || "year"; // Default sort
+
+  // If there's a search query, default to relevance (rank) unless otherwise specified
+  // Otherwise default to year
+  let sortField = validSortFields[sortBy] || (query ? "rank" : "year");
   const direction = sortOrder === "asc" ? "ASC" : "DESC";
 
   // Pagination
@@ -114,23 +118,25 @@ async function getPapers({ query, filters, page, limit, sortBy, sortOrder }) {
   const totalRecords = parseInt(countRes.rows[0].count, 10);
 
   // Data Query
+  // We include ts_rank_cd to sort by relevance if needed
   const dataQuery = `
     SELECT 
       id, subject_code as "subjectCode", dept_code as "deptCode", department, 
-      cat_code as "catCode", category, subject_number as "subjectNumber",
-      exam_type_raw as "examTypeRaw", exam_type as "examType", 
+      category, exam_type as "examType", 
       midsem_number as "midsemNumber", year, session, variant, detail,
+      subject_name as "subjectName",
       file_extension as "fileExtension", original_file_name as "originalFileName",
-      file_size as "fileSize", content_type as "contentType", 
-      uploaded_at as "uploadedAt", download_url as "downloadUrl", 
-      metadata_url as "metadataUrl", search_text as "searchText"
+      file_size as "fileSize", uploaded_at as "uploadedAt", 
+      download_url as "downloadUrl"
+      ${query ? `, ts_rank_cd(to_tsvector('english', search_text), plainto_tsquery('english', $${values.length + 1})) as rank` : ""}
     FROM papers
     ${where}
     ORDER BY ${sortField} ${direction}
-    LIMIT $${values.length + 1} OFFSET $${values.length + 2}
+    LIMIT $${query ? values.length + 2 : values.length + 1} OFFSET $${query ? values.length + 3 : values.length + 2}
   `;
 
-  const dataRes = await db.query(dataQuery, [...values, pageSize, offset]);
+  const queryParams = query ? [...values, normalizeQuery(query), pageSize, offset] : [...values, pageSize, offset];
+  const dataRes = await db.query(dataQuery, queryParams);
 
   const totalPages = Math.ceil(totalRecords / pageSize);
 
@@ -151,13 +157,12 @@ async function getPaperById(id) {
   const query = `
     SELECT 
       id, subject_code as "subjectCode", dept_code as "deptCode", department, 
-      cat_code as "catCode", category, subject_number as "subjectNumber",
-      exam_type_raw as "examTypeRaw", exam_type as "examType", 
+      category, exam_type as "examType", 
       midsem_number as "midsemNumber", year, session, variant, detail,
+      subject_name as "subjectName",
       file_extension as "fileExtension", original_file_name as "originalFileName",
-      file_size as "fileSize", content_type as "contentType", 
-      uploaded_at as "uploadedAt", download_url as "downloadUrl", 
-      metadata_url as "metadataUrl", search_text as "searchText"
+      file_size as "fileSize", uploaded_at as "uploadedAt", 
+      download_url as "downloadUrl"
     FROM papers
     WHERE id = $1
   `;
@@ -231,10 +236,8 @@ async function getSubjectCodes({ deptCode, category }) {
   const query = `
     SELECT DISTINCT
       subject_code as "subjectCode",
-      subject_number as "subjectNumber",
       dept_code as "deptCode",
       department,
-      cat_code as "catCode",
       category
     FROM papers
     ${where}

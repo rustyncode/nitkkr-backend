@@ -12,7 +12,7 @@ function generateHash(items) {
 
 async function getStoredMeta() {
   try {
-    const res = await db.pool.query("SELECT value FROM meta WHERE key = $1", ["notification_meta"]);
+    const res = await db.query("SELECT value FROM meta WHERE key = $1", ["notification_meta"]);
     if (res.rows.length > 0) return res.rows[0].value;
     return { hash: "empty", totalCount: 0, lastScrapedAt: null, scrapeCount: 0 };
   } catch (err) {
@@ -21,15 +21,52 @@ async function getStoredMeta() {
   }
 }
 
-async function getNotificationsFromDb(limit = 500) {
+async function getNotificationsFromDb({ limit = 20, offset = 0, category = "", search = "" } = {}) {
   try {
-    const res = await db.pool.query(
-      "SELECT title, date, link, category, source, created_at FROM notifications ORDER BY date DESC, created_at DESC LIMIT $1",
-      [limit]
+    let where = "WHERE 1=1";
+    const params = [];
+    let paramIdx = 1;
+
+    if (category) {
+      where += ` AND category = $${paramIdx++}`;
+      params.push(category);
+    }
+
+    if (search) {
+      where += ` AND (title ILIKE $${paramIdx} OR category ILIKE $${paramIdx})`;
+      params.push(`%${search}%`);
+      paramIdx++;
+    }
+
+    const res = await db.query(
+      `SELECT title, date, link, category, source, created_at 
+       FROM notifications 
+       ${where} 
+       ORDER BY date DESC, created_at DESC 
+       LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`,
+      [...params, limit, offset]
+    );
+
+    const countRes = await db.query(`SELECT COUNT(*) FROM notifications ${where}`, params);
+
+    return {
+      rows: res.rows,
+      totalCount: parseInt(countRes.rows[0].count, 10)
+    };
+  } catch (err) {
+    console.error("[NotifStore] Failed to get notifications:", err.message);
+    return { rows: [], totalCount: 0 };
+  }
+}
+
+async function getCategoryStats() {
+  try {
+    const res = await db.query(
+      "SELECT category as name, COUNT(*) as count FROM notifications GROUP BY category ORDER BY count DESC"
     );
     return res.rows;
   } catch (err) {
-    console.error("[NotifStore] Failed to get notifications:", err.message);
+    console.error("[NotifStore] Failed to get category stats:", err.message);
     return [];
   }
 }
@@ -54,7 +91,11 @@ async function updateStore(freshItems) {
         const res = await client.query(
           `INSERT INTO notifications (title, date, link, category, source, created_at)
            VALUES ($1, $2, $3, $4, $5, $6)
-           ON CONFLICT (title, date) DO NOTHING
+           ON CONFLICT (title, date) 
+           DO UPDATE SET 
+             category = EXCLUDED.category,
+             link = EXCLUDED.link,
+             source = EXCLUDED.source
            RETURNING id`,
           [item.title, item.date, item.link, item.category, item.source || "general", now]
         );
@@ -94,7 +135,7 @@ async function updateStore(freshItems) {
 
 async function getDigest() {
   const meta = await getStoredMeta();
-  const recentRes = await db.pool.query("SELECT title, date, category FROM notifications ORDER BY created_at DESC LIMIT 5");
+  const recentRes = await db.query("SELECT title, date, category FROM notifications ORDER BY created_at DESC LIMIT 5");
   return {
     hash: meta.hash,
     totalCount: meta.totalCount,
@@ -123,13 +164,22 @@ async function cleanupOldNotifications(days = 30) {
     cutoffDate.setDate(cutoffDate.getDate() - days);
     const dateStr = cutoffDate.toISOString().split("T")[0]; // YYYY-MM-DD
 
-    console.log(`[NotifStore] Cleaning up notifications older than ${dateStr}...`);
-    const res = await db.pool.query(
+    console.log(`[NotifStore] Cleaning up notifications older than ${dateStr} or with invalid format...`);
+
+    // 1. Delete items with invalid date format (anything not YYYY-MM-DD)
+    const formatRes = await db.query(
+      "DELETE FROM notifications WHERE date !~ '^\\d{4}-\\d{2}-\\d{2}$'"
+    );
+
+    // 2. Delete items older than cutoff
+    const oldRes = await db.query(
       "DELETE FROM notifications WHERE date < $1",
       [dateStr]
     );
-    console.log(`[NotifStore] Deleted ${res.rowCount} old notifications.`);
-    return res.rowCount;
+
+    const totalDeleted = (formatRes.rowCount || 0) + (oldRes.rowCount || 0);
+    console.log(`[NotifStore] Total items cleaned: ${totalDeleted} (${formatRes.rowCount} format, ${oldRes.rowCount} old)`);
+    return totalDeleted;
   } catch (err) {
     console.error("[NotifStore] Cleanup failed:", err.message);
     return 0;
@@ -154,27 +204,9 @@ async function runScrapeAndStore(scraper) {
   }
 }
 
-let _cronJob = null;
-function startScheduler(scraper, cronExpression = "0 0 * * *") { // Daily at midnight UTC
-  try {
-    const cron = require("node-cron");
-    if (!cron.validate(cronExpression)) {
-      console.error("Invalid Cron:", cronExpression);
-      return;
-    }
-    console.log(`[NotifStore] Scheduler started: ${cronExpression}`);
-    if (_cronJob) _cronJob.stop();
-    _cronJob = cron.schedule(cronExpression, async () => {
-      console.log(`[NotifStore] Scrape started...`);
-      await runScrapeAndStore(scraper);
-    });
-  } catch (e) {
-    console.warn("[NotifStore] Cron failed", e.message);
-  }
-}
+
 
 async function initializeStore(scraper) {
-  await db.initDB();
   const meta = await getStoredMeta();
   // Only scrape if DB is totally empty
   if (!meta.hash || meta.hash === "empty") {
@@ -186,8 +218,8 @@ async function initializeStore(scraper) {
 
 async function clearStore() {
   try {
-    await db.pool.query("DELETE FROM notifications");
-    await db.pool.query("DELETE FROM meta WHERE key = 'notification_meta'");
+    await db.query("DELETE FROM notifications");
+    await db.query("DELETE FROM meta WHERE key = 'notification_meta'");
     console.log("[NotifStore] Store cleared.");
     return true;
   } catch (err) {
@@ -201,10 +233,8 @@ module.exports = {
   getDigest,
   getFullStore,
   clearStore,
-  startScheduler,
-  runScrapeAndStore,
-  initializeStore,
   getNotificationsFromDb,
   getStoredMeta,
-  cleanupOldNotifications
+  cleanupOldNotifications,
+  getCategoryStats
 };

@@ -110,6 +110,7 @@ function parseFileName(name) {
         fileExtension: ext,
         originalFileName: name,
         searchText,
+        subjectName: detail, // Fallback to detail for now, or map here
     };
 }
 
@@ -238,13 +239,14 @@ async function syncPapers() {
           id, subject_code, dept_code, department, cat_code, category, subject_number,
           exam_type_raw, exam_type, midsem_number, year, session, variant, detail,
           file_extension, original_file_name, file_size, content_type, uploaded_at,
-          download_url, metadata_url, search_text, updated_at
+          download_url, metadata_url, subject_name, search_text, updated_at
         ) VALUES 
-        ${batch.map((_, idx) => `($${idx * 22 + 1}, $${idx * 22 + 2}, $${idx * 22 + 3}, $${idx * 22 + 4}, $${idx * 22 + 5}, $${idx * 22 + 6}, $${idx * 22 + 7}, $${idx * 22 + 8}, $${idx * 22 + 9}, $${idx * 22 + 10}, $${idx * 22 + 11}, $${idx * 22 + 12}, $${idx * 22 + 13}, $${idx * 22 + 14}, $${idx * 22 + 15}, $${idx * 22 + 16}, $${idx * 22 + 17}, $${idx * 22 + 18}, $${idx * 22 + 19}, $${idx * 22 + 20}, $${idx * 22 + 21}, $${idx * 22 + 22}, NOW())`).join(", ")}
+        ${batch.map((_, idx) => `($${idx * 23 + 1}, $${idx * 23 + 2}, $${idx * 23 + 3}, $${idx * 23 + 4}, $${idx * 23 + 5}, $${idx * 23 + 6}, $${idx * 23 + 7}, $${idx * 23 + 8}, $${idx * 23 + 9}, $${idx * 23 + 10}, $${idx * 23 + 11}, $${idx * 23 + 12}, $${idx * 23 + 13}, $${idx * 23 + 14}, $${idx * 23 + 15}, $${idx * 23 + 16}, $${idx * 23 + 17}, $${idx * 23 + 18}, $${idx * 23 + 19}, $${idx * 23 + 20}, $${idx * 23 + 21}, $${idx * 23 + 22}, $${idx * 23 + 23}, NOW())`).join(", ")}
         ON CONFLICT (id) DO UPDATE SET
           department = EXCLUDED.department,
           exam_type = EXCLUDED.exam_type,
           download_url = EXCLUDED.download_url,
+          subject_name = EXCLUDED.subject_name,
           search_text = EXCLUDED.search_text,
           updated_at = NOW();
       `;
@@ -253,7 +255,7 @@ async function syncPapers() {
                 r.id, r.subjectCode, r.deptCode, r.department, r.catCode, r.category, r.subjectNumber,
                 r.examTypeRaw, r.examType, r.midsemNumber, r.year, r.session, r.variant, r.detail,
                 r.fileExtension, r.originalFileName, r.fileSize, r.contentType, r.uploadedAt,
-                r.downloadUrl, r.metadataUrl, r.searchText
+                r.downloadUrl, r.metadataUrl, r.subjectName, r.searchText
             ]);
 
             await db.query(queryText, values);

@@ -14,7 +14,7 @@
     ],
     "crons": [
         {
-            "path": "/api/notifications/scrape",
+            "path": "/api/cron/scrape-notifications",
             "schedule": "0 0 * * *"
         }
     ]

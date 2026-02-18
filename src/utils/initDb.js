@@ -24,10 +24,13 @@ async function initDb() {
       uploaded_at TIMESTAMPTZ,
       download_url TEXT,
       metadata_url TEXT,
+      subject_name TEXT,
       search_text TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
+    -- Migration: Add subject_name column if missing
+    ALTER TABLE papers ADD COLUMN IF NOT EXISTS subject_name TEXT;
   `;
 
   const createJobsTableQuery = `
@@ -89,7 +92,8 @@ async function initDb() {
     CREATE INDEX IF NOT EXISTS idx_papers_subject_code ON papers(subject_code);
     CREATE INDEX IF NOT EXISTS idx_papers_year ON papers(year);
     CREATE INDEX IF NOT EXISTS idx_papers_exam_type ON papers(exam_type);
-    CREATE INDEX IF NOT EXISTS idx_papers_search_text ON papers USING GIN (to_tsvector('english', search_text));
+    CREATE INDEX IF NOT EXISTS idx_papers_subject_name ON papers(subject_name);
+    CREATE INDEX IF NOT EXISTS idx_papers_search_text ON papers USING GIN (to_tsvector('english', search_text || ' ' || COALESCE(subject_name, '')));
   `;
 
   const createJobIndexesQuery = `

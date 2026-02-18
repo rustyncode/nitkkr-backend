@@ -10,6 +10,13 @@ coverage/
 .DS_Store
 Thumbs.db
 
+# Logs
+server.log
+*.log
+
+# Temp/Stats data
+db_check.json
+
 # Local scripts (seeding, testing - not for production)
 scripts/
 test_api.sh

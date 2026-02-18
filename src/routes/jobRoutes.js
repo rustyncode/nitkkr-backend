@@ -2,8 +2,9 @@ const express = require("express");
 const router = express.Router();
 const jobController = require("../controllers/jobController");
 
-// Get all jobs
+// ── Public endpoints ──────────────────────────────────────────
+
+// GET /api/jobs — all active jobs from DB
 router.get("/jobs", jobController.getJobs);
-router.post("/jobs/refresh", jobController.refreshJobs);
 
 module.exports = router;

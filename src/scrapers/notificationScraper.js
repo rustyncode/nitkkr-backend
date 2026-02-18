@@ -81,36 +81,48 @@ function parseDate(dateStr) {
 
   const cleaned = dateStr.replace(/\s+/g, " ").trim();
 
-  // Formats: "February 12, 2026", "November 30, 2024", etc.
-  const match = cleaned.match(/(\w+)\s+(\d{1,2}),?\s+(\d{4})/);
-  if (!match) return null;
+  // Format 1: "February 12, 2026" or "12 February 2024"
+  const monthMatch = cleaned.match(/(\w+)\s+(\d{1,2}),?\s+(\d{4})/) || cleaned.match(/(\d{1,2})\s+(\w+),?\s+(\d{4})/);
 
-  const monthNames = {
-    january: 0,
-    february: 1,
-    march: 2,
-    april: 3,
-    may: 4,
-    june: 5,
-    july: 6,
-    august: 7,
-    september: 8,
-    october: 9,
-    november: 10,
-    december: 11,
-  };
+  if (monthMatch) {
+    const monthNames = {
+      january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
+      july: 6, august: 7, september: 8, october: 9, november: 10, december: 11,
+    };
 
-  const month = monthNames[match[1].toLowerCase()];
-  if (month === undefined) return null;
+    let monthName, dayStr, yearStr;
+    if (isNaN(monthMatch[1])) {
+      monthName = monthMatch[1];
+      dayStr = monthMatch[2];
+      yearStr = monthMatch[3];
+    } else {
+      dayStr = monthMatch[1];
+      monthName = monthMatch[2];
+      yearStr = monthMatch[3];
+    }
 
-  const day = parseInt(match[2], 10);
-  const year = parseInt(match[3], 10);
+    const month = monthNames[monthName.toLowerCase()];
+    if (month !== undefined) {
+      const day = parseInt(dayStr, 10);
+      const year = parseInt(yearStr, 10);
+      if (day >= 1 && day <= 31 && year >= 2000 && year <= 2100) {
+        return new Date(Date.UTC(year, month, day)).toISOString().split("T")[0];
+      }
+    }
+  }
 
-  // Sanity checks
-  if (day < 1 || day > 31 || year < 2000 || year > 2100) return null;
+  // Format 2: "12.02.2026" or "12-02-2026" or "12/02/2026"
+  const numericMatch = cleaned.match(/(\d{1,2})[\.\-/](\d{1,2})[\.\-/](\d{4})/);
+  if (numericMatch) {
+    const day = parseInt(numericMatch[1], 10);
+    const month = parseInt(numericMatch[2], 10) - 1; // 0-indexed
+    const year = parseInt(numericMatch[3], 10);
+    if (day >= 1 && day <= 31 && month >= 0 && month <= 11 && year >= 2000 && year <= 2100) {
+      return new Date(Date.UTC(year, month, day)).toISOString().split("T")[0];
+    }
+  }
 
-  const date = new Date(Date.UTC(year, month, day));
-  return date.toISOString().split("T")[0]; // "YYYY-MM-DD"
+  return null;
 }
 
 // ─── Check if date is within last N days ────────────────────
@@ -130,9 +142,22 @@ function isWithinDays(dateStr, days) {
 function categorize(title) {
   const t = title.toLowerCase();
 
+  // 1. Specific Exam Documents (Priority)
   if (t.includes("date sheet") || t.includes("exam date sheet")) {
     return "Exam Date Sheets";
   }
+
+  // 2. Results (High Priority - specific results often contain the word 'exam')
+  if (
+    t.includes("result") ||
+    t.includes("marks") ||
+    t.includes("performance") ||
+    t.includes("grade card")
+  ) {
+    return "Results";
+  }
+
+  // 3. General Examination (Broad category)
   if (
     t.includes("exam") ||
     t.includes("sessional") ||
@@ -142,14 +167,8 @@ function categorize(title) {
   ) {
     return "Examination";
   }
-  if (
-    t.includes("result") ||
-    t.includes("marks") ||
-    t.includes("performance") ||
-    t.includes("grade card")
-  ) {
-    return "Results";
-  }
+
+  // 4. Financial / Support
   if (
     t.includes("scholarship") ||
     t.includes("fellowship") ||
@@ -158,6 +177,8 @@ function categorize(title) {
   ) {
     return "Scholarship";
   }
+
+  // 5. Careers & Placements
   if (
     t.includes("placement") ||
     t.includes("job") ||
@@ -167,6 +188,8 @@ function categorize(title) {
   ) {
     return "Placements";
   }
+
+  // 6. Recruitment (Hiring)
   if (
     t.includes("recruitment") ||
     t.includes("advt") ||
@@ -179,12 +202,13 @@ function categorize(title) {
     t.includes("registrar") ||
     t.includes("research fellow") ||
     t.includes("project associate") ||
-    t.includes("project associate") ||
     t.includes("research assistant") ||
     t.includes("research intern")
   ) {
     return "Recruitment";
   }
+
+  // 7. Admissions & Official processes
   if (
     t.includes("admission") ||
     t.includes("registration process") ||
@@ -197,6 +221,8 @@ function categorize(title) {
   ) {
     return "Admission";
   }
+
+  // 8. Events & Alumni
   if (
     t.includes("convocation") ||
     t.includes("alumni") ||
@@ -205,6 +231,8 @@ function categorize(title) {
   ) {
     return "Events";
   }
+
+  // 9. Extra-Curricular
   if (
     t.includes("cultural") ||
     t.includes("techfest") ||
@@ -214,6 +242,8 @@ function categorize(title) {
   ) {
     return "Sports & Culture";
   }
+
+  // 10. Academic Events (Workshops etc)
   if (
     t.includes("stc") ||
     t.includes("short term course") ||
@@ -227,6 +257,8 @@ function categorize(title) {
   ) {
     return "Academic Event";
   }
+
+  // 11. Student Life
   if (
     t.includes("hostel") ||
     t.includes("mess") ||
@@ -238,6 +270,8 @@ function categorize(title) {
   ) {
     return "Student Welfare";
   }
+
+  // 12. Admin / Tenders
   if (
     t.includes("fee") ||
     t.includes("payment") ||
@@ -249,9 +283,13 @@ function categorize(title) {
   ) {
     return "Administrative";
   }
+
+  // 13. Calendars
   if (t.includes("academic calendar") || (t.includes("academic") && t.includes("calendar"))) {
     return "Academic Calendar";
   }
+
+  // 14. Academic Resources
   if (
     t.includes("timetable") ||
     t.includes("time table") ||
@@ -260,7 +298,8 @@ function categorize(title) {
     t.includes("minor degree") ||
     t.includes("semester") ||
     t.includes("handbook") ||
-    t.includes("syllabus")
+    t.includes("syllabus") ||
+    t.includes("academic")
   ) {
     return "Academic";
   }
@@ -465,8 +504,8 @@ function parseGenericListFromHtml(html, sourceName) {
     if (!dateMatch) dateMatch = text.match(/(\d{1,2})[\.\-/](\d{1,2})[\.\-/](\d{4})/);
 
     if (dateMatch) {
-      const parsed = parseDate(dateMatch[0]) || dateMatch[0].replace(/[\.\-]/g, "-");
-      if (parsed && parsed.length >= 10) lastSeenDate = parsed;
+      const parsed = parseDate(dateMatch[0]);
+      if (parsed) lastSeenDate = parsed;
     }
 
     // 2. Find links in this element
@@ -483,7 +522,7 @@ function parseGenericListFromHtml(html, sourceName) {
 
         // If no date found in this specific row, use the last seen date
         // (but only if it's reasonably recent/valid for the context)
-        const itemDate = lastSeenDate || new Date().toISOString().split("T")[0];
+        const itemDate = lastSeenDate; // Return null if no date found instead of defaulting to Today
 
         if (link && !link.startsWith("http")) link = NITKKR_URL + (link.startsWith("/") ? "" : "/") + link;
 
@@ -520,24 +559,23 @@ async function scrapeNotifications() {
         console.log(`[Scraper] Fetching ${site.source} from ${site.url}...`);
         const html = await fetchPage(site.url);
 
-        // Homepage needs specific wrappers (Announcements/Notifications)
+        let items = [];
         if (site.source === "homepage") {
           const annals = parseAnnouncementsFromHtml(html);
           const notifs = parseNotificationsFromHtml(html);
-          allRecords.push(...annals, ...notifs);
+          items.push(...annals, ...notifs);
         } else {
-          // Subpages are usually homogenous lists
-          const items = parseGenericListFromHtml(html, site.source);
-          if (items.length > 0) {
-            allRecords.push(...items);
-            console.log(`[Scraper] Found ${items.length} items from ${site.source}`);
-          } else {
-            // Last resort regex on full page
-            const regexItems = [];
-            extractWithRegex(html, site.source, regexItems);
-            allRecords.push(...regexItems);
-            console.log(`[Scraper] Regex fallback found ${regexItems.length} items from ${site.source}`);
+          items = parseGenericListFromHtml(html, site.source);
+          if (items.length === 0) {
+            extractWithRegex(html, site.source, items);
           }
+        }
+
+        // Apply 30-day freshness filter
+        const recentItems = items.filter(item => isWithinDays(item.date, 30));
+        if (recentItems.length > 0) {
+          allRecords.push(...recentItems);
+          console.log(`[Scraper] Added ${recentItems.length} fresh items from ${site.source} (skipped ${items.length - recentItems.length} old)`);
         }
       } catch (err) {
         console.error(`[Scraper] Failed to fetch ${site.source}:`, err.message);

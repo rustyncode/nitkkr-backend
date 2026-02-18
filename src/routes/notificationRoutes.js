@@ -1,23 +1,28 @@
 const express = require("express");
 const router = express.Router();
 const notificationController = require("../controllers/notificationController");
+const adminAuth = require("../middleware/adminAuth");
 
-// GET /api/notifications — get all notifications (paginated, filterable)
+// ── Public endpoints ──────────────────────────────────────────
+
+// GET /api/notifications — all notifications (paginated, filterable)
 router.get("/notifications", notificationController.getAllNotifications);
 
-// GET /api/notifications/recent — get notifications from the last N days (default 30)
+// GET /api/notifications/recent — last N days (default 30)
 router.get("/notifications/recent", notificationController.getRecentNotifications);
 
-// GET /api/notifications/categories — get all notification categories with counts
+// GET /api/notifications/categories — category list with counts
 router.get("/notifications/categories", notificationController.getCategories);
-
-// POST /api/notifications/refresh — force-refresh the scraped notification cache
-router.post("/notifications/refresh", notificationController.refreshNotifications);
 
 // GET /api/notifications/digest — lightweight hash check
 router.get("/notifications/digest", notificationController.getDigest);
 
-// GET /api/notifications/digest/full — full store fetch
-router.get("/notifications/digest/full", notificationController.getDigestFull);
+// ── Admin-only endpoints (require x-admin-key header) ─────────
+
+// POST /api/notifications/refresh — force-refresh from NIT KKR website
+router.post("/notifications/refresh", adminAuth, notificationController.refreshNotifications);
+
+// GET /api/notifications/digest/full — full store dump
+router.get("/notifications/digest/full", adminAuth, notificationController.getDigestFull);
 
 module.exports = router;
