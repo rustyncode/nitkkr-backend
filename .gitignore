@@ -9,3 +9,7 @@ coverage/
 # OS
 .DS_Store
 Thumbs.db
+
+# Local scripts (seeding, testing - not for production)
+scripts/
+test_api.sh
