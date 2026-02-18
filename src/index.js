@@ -15,6 +15,7 @@ const notificationRoutes = require("./routes/notificationRoutes");
 const jobRoutes = require("./routes/jobRoutes");
 
 const { notFoundHandler, globalErrorHandler } = require("./middleware/errorHandler");
+const visitorTracker = require("./middleware/visitorTracker");
 const scraper = require("./scrapers/notificationScraper");
 const notificationStore = require("./services/notificationStore");
 const jobStore = require("./services/jobStore");
@@ -44,12 +45,24 @@ if (constants.NODE_ENV === "development") {
 
 app.use(express.json());
 
-app.get("/", (_req, res) => {
+// Track unique visitors by IP
+app.use(visitorTracker);
+
+app.get("/", async (_req, res) => {
+  let uniqueUsers = 0;
+  try {
+    const result = await db.query("SELECT COUNT(*) FROM visitors");
+    uniqueUsers = parseInt(result.rows[0].count, 10);
+  } catch (_) { }
+
   res.json({
     success: true,
     message: "NIT KKR PYQ API is running",
-    version: "1.2.1", // Fixed property and routing issues
+    version: "1.2.2",
     environment: constants.NODE_ENV,
+    stats: {
+      uniqueUsers,
+    },
     endpoints: {
       papers: "/api/papers",
       allPapers: "/api/papers/all",
@@ -63,7 +76,8 @@ app.get("/", (_req, res) => {
       refreshNotifications: "POST /api/notifications/refresh",
       digest: "/api/notifications/digest",
       digestFull: "/api/notifications/digest/full",
-      jobs: "/api/jobs"
+      jobs: "/api/jobs",
+      userCount: "/api/users/count",
     },
   });
 });
@@ -103,6 +117,23 @@ app.delete("/api/notifications/store", async (_req, res) => {
     res.json({ success: true, message: "Notification store cleared." });
   } catch (err) {
     res.status(500).json({ success: false, message: "Failed to clear store", error: err.message });
+  }
+});
+
+// Unique user count by IP
+app.get("/api/users/count", async (_req, res) => {
+  try {
+    const result = await db.query(
+      "SELECT COUNT(*) AS total, MAX(last_seen) AS last_active FROM visitors"
+    );
+    const { total, last_active } = result.rows[0];
+    res.json({
+      success: true,
+      uniqueUsers: parseInt(total, 10),
+      lastActive: last_active,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

@@ -75,6 +75,15 @@ async function initDb() {
     );
   `;
 
+  const createVisitorsTableQuery = `
+    CREATE TABLE IF NOT EXISTS visitors (
+      ip TEXT PRIMARY KEY,
+      first_seen TIMESTAMPTZ DEFAULT NOW(),
+      last_seen TIMESTAMPTZ DEFAULT NOW(),
+      visit_count INTEGER DEFAULT 1
+    );
+  `;
+
   const createIndexesQuery = `
     CREATE INDEX IF NOT EXISTS idx_papers_department ON papers(department);
     CREATE INDEX IF NOT EXISTS idx_papers_subject_code ON papers(subject_code);
@@ -101,6 +110,7 @@ async function initDb() {
     await db.query(createJobsTableQuery);
     await db.query(createNotificationsTableQuery);
     await db.query(createMetaTableQuery);
+    await db.query(createVisitorsTableQuery);
 
     console.log("[InitDB] Checking/Creating indexes...");
     await db.query(createIndexesQuery);
