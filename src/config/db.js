@@ -2,8 +2,21 @@ const { Pool } = require("pg");
 const constants = require("./constants");
 
 // Create a new pool using the connection string from environment variables
+// Strip sslmode param cleanly from the connection URL to avoid pg v9 SSL deprecation warning
+function cleanDbUrl(url) {
+    if (!url) return url;
+    try {
+        const u = new URL(url);
+        u.searchParams.delete("sslmode");
+        return u.toString();
+    } catch {
+        // Fallback: regex strip for non-standard URLs
+        return url.replace(/[?&]sslmode=[^&]*/g, "").replace(/\?&/, "?").replace(/[?&]$/, "");
+    }
+}
+
 const pool = new Pool({
-    connectionString: constants.DATABASE_URL,
+    connectionString: cleanDbUrl(constants.DATABASE_URL),
     ssl: constants.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
     max: 20, // Max number of clients in the pool
     idleTimeoutMillis: 30000,
