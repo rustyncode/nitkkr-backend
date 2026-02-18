@@ -1,5 +1,5 @@
 
-module.exports = ({ downloadLink }) => `
+module.exports = ({ downloadLink = "https://expo.dev/artifacts/eas/e1xfScJJZE4xdduBQHVCoD.apk" }) => `
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -263,7 +263,7 @@ module.exports = ({ downloadLink }) => `
                 <path fill="#FBBC04" d="M6.39 37.23c.3.22.66.34 1.03.34 1.25 0 2.26-1.02 2.26-2.27V5.47c0-1.25-1.01-2.27-2.26-2.27-.37 0-.73.12-1.03.34L25.3 19.33 6.39 37.23z"/>
                 <path fill="#EA4335" d="M28.05 26.44L6.39 37.23l18.91-17.9L6.39 3.53l21.66 10.79c1.17.66 1.58 2.14.92 3.31-.22.39-.53.72-.85.94l-.07-.13z"/>
             </svg>
-            <span style="font-size: 20px; color: var(--text-secondary); font-family: 'Product Sans', sans-serif;">Google Play (Clone)</span>
+            <span style="font-size: 20px; color: var(--text-secondary); font-family: 'Product Sans', sans-serif;">RustiNet AppStore</span>
         </div>
         <div>
             <span class="material-icons" style="color: var(--text-secondary);">search</span>
@@ -275,7 +275,7 @@ module.exports = ({ downloadLink }) => `
             <div class="header-top">
                 <div class="app-icon">
                     <!-- Replace with real icon URL -->
-                    <img src="https://via.placeholder.com/150/0b3663/ffffff?text=RN" alt="RustiNet Icon">
+                    <img src="https://nitkkr.ac.in/wp-content/uploads/2023/09/cropped-nitlogo-1-e1711375918194.png" alt="RustiNet Icon">
                 </div>
                 <div class="app-info mobile-only">
                     <h1>RustiNet</h1>
