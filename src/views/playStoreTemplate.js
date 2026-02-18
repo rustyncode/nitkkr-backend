@@ -275,7 +275,7 @@ module.exports = ({ downloadLink = "https://expo.dev/artifacts/eas/e1xfScJJZE4xd
             <div class="header-top">
                 <div class="app-icon">
                     <!-- Replace with real icon URL -->
-                    <img src="https://nitkkr.ac.in/wp-content/uploads/2023/09/cropped-nitlogo-1-e1711375918194.png" alt="RustiNet Icon">
+                    <img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSSOtp1_hIyGFregiLV8bLWnCkYdzzIJfx72A&s" alt="RustiNet Icon">
                 </div>
                 <div class="app-info mobile-only">
                     <h1>RustiNet</h1>
