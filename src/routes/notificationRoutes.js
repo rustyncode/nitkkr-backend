@@ -23,6 +23,6 @@ router.get("/notifications/digest", notificationController.getDigest);
 router.post("/notifications/refresh", adminAuth, notificationController.refreshNotifications);
 
 // GET /api/notifications/digest/full — full store dump
-router.get("/notifications/digest/full", adminAuth, notificationController.getDigestFull);
+router.get("/notifications/digest/full", notificationController.getDigestFull);
 
 module.exports = router;

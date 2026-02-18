@@ -147,10 +147,11 @@ async function getDigest() {
 }
 
 async function getFullStore() {
-  const items = await getNotificationsFromDb(100);
+  // Fetch a large number to ensure we get all relevant notifications for sync
+  const { rows } = await getNotificationsFromDb({ limit: 500 });
   const meta = await getStoredMeta();
   return {
-    items: items,
+    items: rows,
     totalCount: meta.totalCount,
     hash: meta.hash,
     lastScrapedAt: meta.lastScrapedAt,
