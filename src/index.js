@@ -308,17 +308,15 @@ const server = app.listen(PORT, async () => {
     console.warn("[Startup] Job store init failed:", err.message);
   }
 
-  // 5. Seed App Download Link if missing
-  try {
-    const res = await db.query("SELECT value FROM meta WHERE key = 'app_download_link'");
-    if (res.rowCount === 0) {
-      const demoLink = { url: "https://expo.dev/artifacts/eas/e1xfScJJZE4xdduBQHVCoD.apk" };
-      await db.query("INSERT INTO meta (key, value) VALUES ($1, $2)", ["app_download_link", demoLink]);
-      console.log("[Startup] Seeded 'app_download_link' in meta table.");
-    }
-  } catch (err) {
-    console.warn("[Startup] Failed to seed app link:", err.message);
-  }
+  // 5. Seed App Download Link (Force update to ensure correct link)
+  const demoLink = { url: "https://expo.dev/artifacts/eas/e1xfScJJZE4xdduBQHVCoD.apk" };
+  await db.query(`
+      INSERT INTO meta (key, value)
+      VALUES ($1, $2)
+      ON CONFLICT (key)
+      DO UPDATE SET value = $2
+    `, ["app_download_link", demoLink]);
+  console.log("[Startup] 'app_download_link' verified/updated in meta.");
 
   // NOTE: No node-cron here. Scheduled tasks run via Vercel Cron
   // which calls POST /api/cron/scrape-notifications on a schedule.
