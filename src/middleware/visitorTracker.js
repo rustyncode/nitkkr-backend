@@ -13,14 +13,29 @@ function visitorTracker(req, res, next) {
         req.socket?.remoteAddress ||
         "unknown";
 
+    // Extract location headers (from Vercel/Cloudflare)
+    const city = req.headers["x-vercel-ip-city"] || req.headers["cf-ipcity"] || "Unknown";
+    const country = req.headers["x-vercel-ip-country"] || req.headers["cf-ipcountry"] || "Unknown";
+    const region = req.headers["x-vercel-ip-country-region"] || "Unknown";
+    const userAgent = req.headers["user-agent"] || "Unknown";
+
+    // Simple device detection
+    const isMobile = /mobile|android|iphone|ipad|ipod/i.test(userAgent);
+    const deviceType = isMobile ? "Mobile" : "Desktop";
+
     // Fire-and-forget — don't block the request
     db.query(
-        `INSERT INTO visitors (ip, first_seen, last_seen, visit_count)
-     VALUES ($1, NOW(), NOW(), 1)
+        `INSERT INTO visitors (ip, user_agent, city, country, region, device_type, first_seen, last_seen, visit_count)
+     VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW(), 1)
      ON CONFLICT (ip) DO UPDATE
        SET last_seen = NOW(),
-           visit_count = visitors.visit_count + 1`,
-        [ip]
+           visit_count = visitors.visit_count + 1,
+           user_agent = EXCLUDED.user_agent,
+           city = EXCLUDED.city,
+           country = EXCLUDED.country,
+           region = EXCLUDED.region,
+           device_type = EXCLUDED.device_type`,
+        [ip, userAgent, city, country, region, deviceType]
     ).catch((err) => {
         // Silent fail — visitor tracking should never break the API
         console.warn("[VisitorTracker] Failed to log IP:", err.message);

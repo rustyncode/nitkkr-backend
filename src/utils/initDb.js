@@ -81,10 +81,21 @@ async function initDb() {
   const createVisitorsTableQuery = `
     CREATE TABLE IF NOT EXISTS visitors (
       ip TEXT PRIMARY KEY,
+      user_agent TEXT,
+      city TEXT,
+      country TEXT,
+      region TEXT,
+      device_type TEXT,
       first_seen TIMESTAMPTZ DEFAULT NOW(),
       last_seen TIMESTAMPTZ DEFAULT NOW(),
       visit_count INTEGER DEFAULT 1
     );
+    -- Migration for existing visitors table
+    ALTER TABLE visitors ADD COLUMN IF NOT EXISTS user_agent TEXT;
+    ALTER TABLE visitors ADD COLUMN IF NOT EXISTS city TEXT;
+    ALTER TABLE visitors ADD COLUMN IF NOT EXISTS country TEXT;
+    ALTER TABLE visitors ADD COLUMN IF NOT EXISTS region TEXT;
+    ALTER TABLE visitors ADD COLUMN IF NOT EXISTS device_type TEXT;
   `;
 
   const createIndexesQuery = `

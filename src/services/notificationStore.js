@@ -237,5 +237,7 @@ module.exports = {
   getNotificationsFromDb,
   getStoredMeta,
   cleanupOldNotifications,
-  getCategoryStats
+  getCategoryStats,
+  initializeStore,
+  runScrapeAndStore
 };

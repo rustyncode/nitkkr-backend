@@ -65,31 +65,60 @@ app.use(express.json());
 app.use(visitorTracker);
 
 // ─── Root endpoint ───────────────────────────────────────────
+// ─── Root endpoint ───────────────────────────────────────────
 app.get("/", async (_req, res) => {
-  let uniqueUsers = 0;
   try {
-    const result = await db.query("SELECT COUNT(*) FROM visitors");
-    uniqueUsers = parseInt(result.rows[0].count, 10);
-  } catch (_) { }
+    // Parallel data fetching for dashboard
+    const [
+      totalUsersRes,
+      uniqueTodayRes,
+      deviceRes,
+      recentRes,
+      topCountriesRes
+    ] = await Promise.all([
+      db.query("SELECT COUNT(*) FROM visitors"),
+      db.query("SELECT COUNT(*) FROM visitors WHERE last_seen > NOW() - INTERVAL '24 HOURS'"),
+      db.query("SELECT device_type, COUNT(*) FROM visitors GROUP BY device_type"),
+      db.query("SELECT ip, city, country, device_type, last_seen FROM visitors ORDER BY last_seen DESC LIMIT 10"),
+      db.query("SELECT country, COUNT(*) as count FROM visitors WHERE country IS NOT NULL GROUP BY country ORDER BY count DESC LIMIT 5")
+    ]);
 
-  res.json({
-    success: true,
-    data: {
-      message: "NIT KKR PYQ API is running",
-    },
-    meta: {
-      version: "1.3.0",
-      environment: constants.NODE_ENV,
-      stats: { uniqueUsers },
-      endpoints: {
-        papers: "/api/v1/papers",
-        allPapers: "/api/v1/papers/all",
-        notifications: "/api/v1/notifications",
-        jobs: "/api/v1/jobs",
-        health: "/api/v1/health",
-      },
-    },
-  });
+    // Process data
+    const totalUsers = parseInt(totalUsersRes.rows[0].count, 10);
+    const uniqueToday = parseInt(uniqueTodayRes.rows[0].count, 10);
+
+    // Calculate device percentages
+    const mobileCount = parseInt(deviceRes.rows.find(r => r.device_type === 'Mobile')?.count || 0, 10);
+    const desktopCount = parseInt(deviceRes.rows.find(r => r.device_type === 'Desktop')?.count || 0, 10);
+    const totalDevices = mobileCount + desktopCount || 1;
+    const deviceStats = {
+      mobile: Math.round((mobileCount / totalDevices) * 100),
+      desktop: Math.round((desktopCount / totalDevices) * 100)
+    };
+
+    // Format recent visits
+    const recentVisits = recentRes.rows.map(row => ({
+      ...row,
+      timeAgo: Math.floor((new Date() - new Date(row.last_seen)) / 1000 / 60) + " mins ago"
+    }));
+
+    // Render HTML
+    const dashboardTemplate = require("./views/dashboardTemplate");
+    const html = dashboardTemplate({
+      totalUsers,
+      uniqueToday,
+      deviceStats,
+      recentVisits,
+      topCountries: topCountriesRes.rows,
+      uptime: Math.floor(process.uptime() / 60) + " mins"
+    });
+
+    res.send(html);
+
+  } catch (err) {
+    console.error("[Dashboard] Failed to render:", err);
+    res.status(500).send("Analytics Dashboard Unavailable");
+  }
 });
 
 // ─── Shared Router for all API endpoints ─────────────────────
