@@ -121,6 +121,25 @@ app.get("/", async (_req, res) => {
   }
 });
 
+// ─── Play Store Download Page ────────────────────────────────
+app.get("/playstore", async (_req, res) => {
+  try {
+    // Fetch link from DB
+    const result = await db.query("SELECT value FROM meta WHERE key = 'app_download_link'");
+    let downloadLink = null;
+
+    if (result.rows.length > 0) {
+      downloadLink = result.rows[0].value.url;
+    }
+
+    const template = require("./views/playStoreTemplate");
+    res.send(template({ downloadLink }));
+  } catch (err) {
+    console.error("[Play Store] Error:", err.message);
+    res.status(500).send("Store unavailable");
+  }
+});
+
 // ─── Shared Router for all API endpoints ─────────────────────
 const apiRouter = express.Router();
 
@@ -287,6 +306,18 @@ const server = app.listen(PORT, async () => {
     console.log("[Startup] Job store ready");
   } catch (err) {
     console.warn("[Startup] Job store init failed:", err.message);
+  }
+
+  // 5. Seed App Download Link if missing
+  try {
+    const res = await db.query("SELECT value FROM meta WHERE key = 'app_download_link'");
+    if (res.rowCount === 0) {
+      const demoLink = { url: "https://expo.dev/artifacts/eas/..." }; // Placeholder
+      await db.query("INSERT INTO meta (key, value) VALUES ($1, $2)", ["app_download_link", demoLink]);
+      console.log("[Startup] Seeded 'app_download_link' in meta table.");
+    }
+  } catch (err) {
+    console.warn("[Startup] Failed to seed app link:", err.message);
   }
 
   // NOTE: No node-cron here. Scheduled tasks run via Vercel Cron
