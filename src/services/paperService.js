@@ -9,7 +9,7 @@ function normalizeQuery(str) {
 
 // ─── Filter helpers ─────────────────────────────────────────
 
-function buildWhereClause(filters, query) {
+function buildWhereClause(filters = {}, query) {
   const conditions = [];
   const values = [];
   let paramIdx = 1;
@@ -86,7 +86,7 @@ function buildWhereClause(filters, query) {
 
 // ─── Public API ─────────────────────────────────────────────
 
-async function getPapers({ query, filters, page, limit, sortBy, sortOrder }) {
+async function getPapers({ query, filters = {}, page, limit, sortBy, sortOrder }) {
   const { where, values } = buildWhereClause(filters, query);
 
   // Sorting
