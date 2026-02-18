@@ -14,7 +14,10 @@ function visitorTracker(req, res, next) {
         "unknown";
 
     // Extract location headers (from Vercel/Cloudflare)
-    const city = req.headers["x-vercel-ip-city"] || req.headers["cf-ipcity"] || "Unknown";
+    // Decode URI components to handle "San%20Francisco" -> "San Francisco"
+    let city = req.headers["x-vercel-ip-city"] || req.headers["cf-ipcity"] || "Unknown";
+    try { city = decodeURIComponent(city); } catch (e) { /* ignore malformed URI */ }
+
     const country = req.headers["x-vercel-ip-country"] || req.headers["cf-ipcountry"] || "Unknown";
     const region = req.headers["x-vercel-ip-country-region"] || "Unknown";
     const userAgent = req.headers["user-agent"] || "Unknown";
