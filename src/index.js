@@ -61,6 +61,9 @@ if (constants.NODE_ENV === "development") {
 // ─── Body parsing ────────────────────────────────────────────
 app.use(express.json());
 
+// ─── Static files (Vercel compatible) ────────────────────────
+app.use(express.static("public"));
+
 // ─── Visitor tracking ────────────────────────────────────────
 app.use(visitorTracker);
 
@@ -124,16 +127,23 @@ app.get("/", async (_req, res) => {
 // ─── Play Store Download Page ────────────────────────────────
 app.get("/playstore", async (_req, res) => {
   try {
-    // Fetch link from DB
-    const result = await db.query("SELECT value FROM meta WHERE key = 'app_download_link'");
-    let downloadLink = null;
+    // Fetch all relevant metadata from DB
+    const results = await db.query(
+      "SELECT key, value FROM meta WHERE key IN ('app_download_link', 'app_logo', 'app_screenshots')"
+    );
 
-    if (result.rows.length > 0) {
-      downloadLink = result.rows[0].value.url;
-    }
+    let downloadLink = null;
+    let logoUrl = "/logo.png"; // Default to local public asset
+    let screenshotUrls = [];
+
+    results.rows.forEach(row => {
+      if (row.key === 'app_download_link') downloadLink = row.value.url;
+      if (row.key === 'app_logo') logoUrl = row.value.url || "/logo.png";
+      if (row.key === 'app_screenshots') screenshotUrls = row.value.screenshots || [];
+    });
 
     const template = require("./views/playStoreTemplate");
-    res.send(template({ downloadLink }));
+    res.send(template({ downloadLink, logoUrl, screenshotUrls }));
   } catch (err) {
     console.error("[Play Store] Error:", err.message);
     res.status(500).send("Store unavailable");
