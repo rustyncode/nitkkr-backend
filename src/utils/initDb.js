@@ -98,6 +98,29 @@ async function initDb() {
     ALTER TABLE visitors ADD COLUMN IF NOT EXISTS device_type TEXT;
   `;
 
+  const createUsersTableQuery = `
+    CREATE TABLE IF NOT EXISTS users (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      firebase_uid TEXT UNIQUE,      -- Links to Firebase Authentication ID
+      roll_number TEXT UNIQUE NOT NULL,       -- e.g., 12111XXX
+      email TEXT UNIQUE NOT NULL,             -- rollno@nitkkr.ac.in
+      name TEXT,
+      branch TEXT,
+      semester INTEGER,
+      bio TEXT,
+      location TEXT,                 -- Hostel name or Room number
+      latitude DOUBLE PRECISION,     -- GPS Latitude
+      longitude DOUBLE PRECISION,    -- GPS Longitude
+      profile_pic_url TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    -- Migration: Add location and GPS columns if missing
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS location TEXT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION;
+  `;
+
   const createIndexesQuery = `
     CREATE INDEX IF NOT EXISTS idx_papers_department ON papers(department);
     CREATE INDEX IF NOT EXISTS idx_papers_subject_code ON papers(subject_code);
@@ -105,6 +128,8 @@ async function initDb() {
     CREATE INDEX IF NOT EXISTS idx_papers_exam_type ON papers(exam_type);
     CREATE INDEX IF NOT EXISTS idx_papers_subject_name ON papers(subject_name);
     CREATE INDEX IF NOT EXISTS idx_papers_search_text ON papers USING GIN (to_tsvector('english', search_text || ' ' || COALESCE(subject_name, '')));
+    CREATE INDEX IF NOT EXISTS idx_users_roll_number ON users(roll_number);
+    CREATE INDEX IF NOT EXISTS idx_users_firebase_uid ON users(firebase_uid);
   `;
 
   const createJobIndexesQuery = `
@@ -119,6 +144,17 @@ async function initDb() {
     CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at);
   `;
 
+  const createOtpsTableQuery = `
+    CREATE TABLE IF NOT EXISTS otps (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      email TEXT NOT NULL,
+      code TEXT NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_otps_email ON otps(email);
+  `;
+
   try {
     console.log("[InitDB] Checking/Creating tables...");
     await db.query(createTableQuery);
@@ -126,6 +162,8 @@ async function initDb() {
     await db.query(createNotificationsTableQuery);
     await db.query(createMetaTableQuery);
     await db.query(createVisitorsTableQuery);
+    await db.query(createUsersTableQuery);
+    await db.query(createOtpsTableQuery);
 
     console.log("[InitDB] Checking/Creating indexes...");
     await db.query(createIndexesQuery);

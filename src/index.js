@@ -12,6 +12,7 @@ const syncService = require("./services/syncService");
 const paperRoutes = require("./routes/paperRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
 const jobRoutes = require("./routes/jobRoutes");
+const authRoutes = require("./routes/authRoutes");
 
 const { notFoundHandler, errorHandler } = require("./middleware/errorHandler");
 const adminAuth = require("./middleware/adminAuth");
@@ -261,8 +262,14 @@ apiRouter.use(paperRoutes);
 apiRouter.use(notificationRoutes);
 apiRouter.use(jobRoutes);
 
+const userRoutes = require("./routes/userRoutes");
+
+// ... (existing code)
+
 // ─── Mount routes ───────────────────────────────────────────
 // Mount versioned routes
+app.use("/api/v1/user", userRoutes);
+app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1", apiRouter);
 
 // Fallback for legacy (v0) apps - SAME AS V1 FOR NOW

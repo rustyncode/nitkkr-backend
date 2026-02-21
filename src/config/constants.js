@@ -22,11 +22,18 @@ const constants = {
 
   CORS_ORIGINS: process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(",") : ["*"],
 
-  FIREBASE_PROJECT_ID: getEnv("FIREBASE_PROJECT_ID"),
-  FIREBASE_APP_ID: getEnv("FIREBASE_APP_ID"),
-  FIREBASE_STORAGE_BUCKET: getEnv("FIREBASE_STORAGE_BUCKET"),
+  // --- User's Auth Project (Phase 1) ---
+  FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID || null,
+  FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL || null,
+  FIREBASE_PRIVATE_KEY: process.env.FIREBASE_PRIVATE_KEY
+    ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n')
+    : null,
 
-  STORAGE_API_URL: getEnv("STORAGE_API_URL"),
+  // --- Legacy/Friend's PYQ Storage Project ---
+  PYQ_FIREBASE_PROJECT_ID: getEnv("PYQ_FIREBASE_PROJECT_ID"),
+  PYQ_FIREBASE_APP_ID: getEnv("PYQ_FIREBASE_APP_ID"),
+  PYQ_FIREBASE_STORAGE_BUCKET: getEnv("PYQ_FIREBASE_STORAGE_BUCKET"),
+  PYQ_STORAGE_API_URL: getEnv("PYQ_STORAGE_API_URL"),
 
   SCRAPE_SCHEDULE: process.env.SCRAPE_SCHEDULE || "0 0 * * *", // Daily at midnight UTC
 
@@ -36,6 +43,10 @@ const constants = {
   // Set ADMIN_SECRET in your .env and Vercel environment variables.
   // Pass as: x-admin-key: <secret> header on admin requests.
   ADMIN_SECRET: process.env.ADMIN_SECRET || null,
+
+  RESEND_API_KEY: process.env.RESEND_API_KEY || null,
+  SMTP_USER: process.env.SMTP_USER || null,
+  SMTP_PASS: process.env.SMTP_PASS || null,
 };
 
 module.exports = constants;

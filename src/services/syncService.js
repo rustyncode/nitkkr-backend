@@ -114,7 +114,7 @@ function parseFileName(name) {
     };
 }
 
-const STORAGE_API = constants.STORAGE_API_URL;
+const STORAGE_API = constants.PYQ_STORAGE_API_URL;
 const https = require("https");
 
 function fetch(url) {

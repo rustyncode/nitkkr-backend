@@ -23,7 +23,9 @@ function cleanDbUrl(url) {
 
 const pool = new Pool({
     connectionString: cleanDbUrl(constants.DATABASE_URL),
-    ssl: constants.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+    ssl: (constants.NODE_ENV === "production" || constants.DATABASE_URL.includes("sslmode=require"))
+        ? { rejectUnauthorized: false }
+        : false,
     max: 20, // Max number of clients in the pool
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 10000,
