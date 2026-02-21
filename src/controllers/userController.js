@@ -51,7 +51,7 @@ const getMyProfile = async (req, res) => {
  */
 const updateProfile = async (req, res) => {
     const { uid } = req.user;
-    const { name, branch, semester, bio, profile_pic_url, location, latitude, longitude } = req.body;
+    const { name, branch, semester, bio, profile_pic_url, location, latitude, longitude, cgpa } = req.body;
 
     try {
         const result = await db.query(
@@ -64,10 +64,11 @@ const updateProfile = async (req, res) => {
            location = COALESCE($6, location),
            latitude = COALESCE($7, latitude),
            longitude = COALESCE($8, longitude),
+           cgpa = COALESCE($9, cgpa),
            updated_at = NOW()
-       WHERE firebase_uid = $9
+       WHERE firebase_uid = $10
        RETURNING *`,
-            [name, branch, semester, bio, profile_pic_url, location, latitude, longitude, uid]
+            [name, branch, semester, bio, profile_pic_url, location, latitude, longitude, cgpa, uid]
         );
 
         if (result.rows.length === 0) {
